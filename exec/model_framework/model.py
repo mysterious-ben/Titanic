@@ -3,6 +3,7 @@ Classification model class
 """
 
 from abc import ABC, abstractmethod
+from typing import Iterable, Dict, Callable
 
 import matplotlib.image as img
 import matplotlib.pyplot as plt
@@ -23,8 +24,9 @@ import exec.model_framework.utilmodel as utmdl
 
 class Metrics(ABC):
     """
-    sklearn-compatible score functions interface
+    Score method interface (compatible with Scikit-learn)
     """
+
     accuracy = (skmtcs.accuracy_score, False)
     accproba = (lambda y, yH: 1. - skmtcs.mean_absolute_error(y, yH[:, 1]), True)
     logproba = (lambda y, yH: -skmtcs.log_loss(y, yH[:, 1]), True)
@@ -33,7 +35,16 @@ class Metrics(ABC):
     recall = (skmtcs.recall_score, False)
 
     @staticmethod
-    def generator(method='accuracy'):
+    def generator(method: str = 'accuracy') -> Callable[float, float]:
+        """
+        Generate a score function from its name
+
+        Args:
+            method: score method name
+
+        Returns:
+
+        """
         if method == 'accuracy':
             return Metrics.accuracy
         elif method == 'accproba':
@@ -52,52 +63,103 @@ class Metrics(ABC):
 
 class ModelAbs(ABC):
     """
-    Abstract classifier
+    Abstract classification model
+
+    Attributes:
+        model:
+        name:
+        x:
+        xt:
+        y:
+        yt:
+        yH:
+        ytH:
+        yP:
+        ytP:
     """
 
-    def __init__(self):
-        self.model = None
-        self.name = None
+    def __init__(self, model, name: str):
+        """
+        Initialize a classifier
+
+        Args:
+            model: Base classifier
+            name: Name of the classifier
+        """
+
+        self.model = model
+        self.name = name
 
     @abstractmethod
-    def fit(self, data):
+    def fit(self, data: pd.DataFrame) -> None:
+        """
+        Fit the model to the data (features + labels)
+
+        Args:
+            data: DataFrame with **x** and **y**
+        """
+
         self.x, self.y = utmdl.dataframeToXy(data)
         self.yH = None
         self.yP = None
 
     @abstractmethod
-    def predict(self, data):
+    def predict(self, data: pd.DataFrame) -> None:
+        """
+        Predict labels for the chosen features
+
+        Args:
+            data: DataFrame with **xt** (and **yt**, optionally)
+        """
+
         self.xt, self.yt = utmdl.dataframeToXy(data)
         self.ytH = None
         self.ytP = None
 
+    def score(self, methods: Iterable[str] = ('accuracy',)) -> (Dict[str, float], Dict[str, float], Dict[str, float]):
+        """
+        Score the classifier
+
+        Args:
+            methods: list of score method names
+
+        Returns:
+            In-sample, Cross-validated and Out-of-sample scores
+        """
+
+        scoreIS = self.scoreIS(methods=methods)
+        scoreOOS = self.scoreOOS(methods=methods)
+        scoreCV = self.scoreCV(methods=methods)
+        return scoreIS, scoreCV, scoreOOS
+
     @abstractmethod
-    def score(self, methods=('accuracy',)):
+    def scoreIS(self, methods: Iterable[str] = ('accuracy',)) -> Dict[str, float]:
+        """Score the classifier (in-sample)"""
         pass
 
     @abstractmethod
-    def scoreIS(self, methods=('accuracy',)):
+    def scoreOOS(self, methods: Iterable[str] = ('accuracy',)) -> Dict[str, float]:
+        """Score the classifier (out-of-sample)"""
         pass
 
     @abstractmethod
-    def scoreOOS(self, methods=('accuracy',)):
+    def scoreCV(self, methods: Iterable[str] = ('accuracy',)) -> Dict[str, float]:
+        """Score the classifier (cross-validation)"""
         pass
 
-    @abstractmethod
-    def scoreCV(self, methods=('accuracy',)):
-        pass
-
-    def confusionMatrix(self):
+    def confusionMatrix(self) -> (np.ndarray, np.ndarray):
+        """Compute a confusion matrix of the classifier (IS and OOS)"""
         confIS = skmtcs.confusion_matrix(self.y, self.yH)
         confIS = confIS / confIS.sum().sum()
         if self.yt is not None:
-            confOSS = skmtcs.confusion_matrix(self.yt, self.ytH)
-            confOSS = confOSS / confOSS.sum().sum()
+            confOOS = skmtcs.confusion_matrix(self.yt, self.ytH)
+            confOOS = confOOS / confOOS.sum().sum()
         else:
-            confOSS = None
-        return confIS, confOSS
+            confOOS = None
+        return confIS, confOOS
 
-    def printSetsInfo(self):
+    def printSetsInfo(self) -> None:
+        """Print a summary on the training and testing data sets"""
         sampleSize = len(self.y)
         sampleSizeT = len(self.yt) if (self.yt is not None) else None
         posRate = np.sum(self.y) / len(self.y)
@@ -107,7 +169,8 @@ class ModelAbs(ABC):
         print('Survived Rate (Train / Test): {:.2f} / {:.2f}'.format(posRate, posRateT))
         print('')
 
-    def printConfusion(self):
+    def printConfusion(self) -> None:
+        """Print the confusion matrices"""
         confIS, confOOS = self.confusionMatrix()
         confISdf = pd.DataFrame(confIS, index=['0', '1'], columns=['0-pred', '1-pred'])
         confOOSdf = pd.DataFrame(confOOS, index=['0', '1'], columns=['0-pred', '1-pred'])
@@ -119,15 +182,19 @@ class ModelAbs(ABC):
         print('')
 
     @abstractmethod
-    def printSummary(self):
+    def printSummary(self) -> None:
+        """Print a summary on the classifier"""
         pass
 
     @abstractmethod
-    def plotROC(self):
+    def plotROC(self) -> None:
+        """Plot the ROC curve"""
         pass
 
     @staticmethod
-    def staticPlotROC(y, yP, ax=None, label=' ', title='ROC'):
+    def staticPlotROC(y: pd.DataFrame, yP: pd.DataFrame, ax=None, label: str = ' ', title: str = 'ROC') -> None:
+        """Plot the ROC curve (static)"""
+
         def plotAux():
             fpr, tpr, _ = skmtcs.roc_curve(y, yP)
             ax.plot(fpr, tpr, label=label)
@@ -170,13 +237,11 @@ class ModelAbs(ABC):
 
 class ModelNormalAbs(ModelAbs):
     """
-    Abstract sklearn classifier with predict_proba available
+    Abstract sklearn classifier (the base classifier is a pipeline, with predict_proba available)
     """
 
-    def __init__(self, model, name):
-        ModelAbs.__init__(self)
-        self.model = model
-        self.name = name
+    def __init__(self, model: skpipe.Pipeline, name: str):
+        ModelAbs.__init__(self, model, name)
 
     def fit(self, data):
         self.x, self.y = utmdl.dataframeToXy(data)
@@ -188,12 +253,6 @@ class ModelNormalAbs(ModelAbs):
         self.xt, self.yt = utmdl.dataframeToXy(data)
         self.ytH = self.model.predict(X=self.xt)
         self.ytP = self.model.predict_proba(X=self.xt)
-
-    def score(self, methods=('accuracy',)):
-        scoreIS = self.scoreIS(methods=methods)
-        scoreOOS = self.scoreOOS(methods=methods)
-        scoreCV = self.scoreCV(methods=methods)
-        return scoreIS, scoreCV, scoreOOS
 
     def scoreIS(self, methods=('accuracy',)):
         scores = {}
@@ -217,7 +276,7 @@ class ModelNormalAbs(ModelAbs):
             scores.update({method: metrics(self.yt, ytH) if (self.yt is not None) else None})
         return scores
 
-    def scoreCV(self, methods=('accuracy',), random_state=1):
+    def scoreCV(self, methods: Iterable[str] = ('accuracy',), random_state: int = 1) -> Dict[str, float]:
         scoring = {}
         for method in methods:
             metrics, proba = Metrics.generator(method=method)
@@ -257,7 +316,8 @@ class LogisticAbs(ModelNormalAbs):
     def __init__(self, model, name):
         ModelNormalAbs.__init__(self, model=model, name=name)
 
-    def printCoefficients(self):
+    def printCoefficients(self) -> None:
+        """Print the fitted coefficients"""
         coef = self.model.named_steps['clf'].coef_[0]
         assert len(coef) == len(self.x.columns)
         coefSrs = pd.Series(coef, index=self.x.columns)
