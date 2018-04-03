@@ -1,5 +1,7 @@
 """
 Classification model class
+
+Todo: to add todo-s
 """
 
 from abc import ABC, abstractmethod

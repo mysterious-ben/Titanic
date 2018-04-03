@@ -6,20 +6,16 @@ import pandas as pd
 import exec.data_framework.utildata as ut
 
 
-def featuresPipeline(data, version=1):
+def featuresPipeline(data: pd.DataFrame, version: int = 1) -> pd.DataFrame:
     """
     Data cleaning of features, the full pipeline (v. 1)
 
-    Parameters
-    ----------
-    data : DataFrame
-        DataFrame with features as columns
-    version : int
-        version of pipeline
+    Args
+        data: DataFrame with features as columns
+        version : version of pipeline
 
     Returns
-    -------
-    cleaned : DataFrame with transformed features as columns
+        DataFrame with transformed features as columns
     """
 
     if version == 1:
