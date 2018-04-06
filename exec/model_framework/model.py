@@ -5,13 +5,14 @@ Todo: to add todo-s
 """
 
 from abc import ABC, abstractmethod
-from typing import Iterable, Dict, Callable
+from typing import Iterable, Dict, Callable, Tuple
 
 import matplotlib.image as img
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pydotplus
+import pygam
 from sklearn import feature_selection as skfs
 from sklearn import linear_model as sklm
 from sklearn import metrics as skmtcs
@@ -20,6 +21,7 @@ from sklearn import neighbors as sknbr
 from sklearn import pipeline as skpipe
 from sklearn import preprocessing as skprcss
 from sklearn import tree as sktree
+from sklearn import base as skbase
 
 import exec.model_framework.utilmodel as utmdl
 
@@ -37,15 +39,12 @@ class Metrics(ABC):
     recall = (skmtcs.recall_score, False)
 
     @staticmethod
-    def generator(method: str = 'accuracy') -> Callable[float, float]:
+    def generator(method: str = 'accuracy') -> Tuple[Callable[[float, float], float], bool]:
         """
         Generate a score function from its name
 
         Args:
             method: score method name
-
-        Returns:
-
         """
         if method == 'accuracy':
             return Metrics.accuracy
@@ -134,15 +133,29 @@ class ModelAbs(ABC):
         scoreCV = self.scoreCV(methods=methods)
         return scoreIS, scoreCV, scoreOOS
 
-    @abstractmethod
     def scoreIS(self, methods: Iterable[str] = ('accuracy',)) -> Dict[str, float]:
         """Score the classifier (in-sample)"""
-        pass
+        scores = {}
+        for method in methods:
+            metrics, proba = Metrics.generator(method=method)
+            if proba:
+                yH = self.yP
+            else:
+                yH = self.yH
+            scores.update({method: metrics(self.y, yH)})
+        return scores
 
-    @abstractmethod
     def scoreOOS(self, methods: Iterable[str] = ('accuracy',)) -> Dict[str, float]:
         """Score the classifier (out-of-sample)"""
-        pass
+        scores = {}
+        for method in methods:
+            metrics, proba = Metrics.generator(method=method)
+            if proba:
+                ytH = self.ytP
+            else:
+                ytH = self.ytH
+            scores.update({method: metrics(self.yt, ytH) if (self.yt is not None) else None})
+        return scores
 
     @abstractmethod
     def scoreCV(self, methods: Iterable[str] = ('accuracy',)) -> Dict[str, float]:
@@ -188,10 +201,13 @@ class ModelAbs(ABC):
         """Print a summary on the classifier"""
         pass
 
-    @abstractmethod
     def plotROC(self) -> None:
         """Plot the ROC curve"""
-        pass
+        fig, ax = plt.subplots()
+        self.staticPlotROC(self.y, self.yP[:, 1], ax=ax, label='IS', title='ROC: {}'.format(self.name))
+        self.staticPlotROC(self.yt, self.ytP[:, 1], ax=ax, label='OOS', title='ROC: {}'.format(self.name))
+        fig.set_tight_layout(True)
+        fig.show()
 
     @staticmethod
     def staticPlotROC(y: pd.DataFrame, yP: pd.DataFrame, ax=None, label: str = ' ', title: str = 'ROC') -> None:
@@ -256,28 +272,6 @@ class ModelNormalAbs(ModelAbs):
         self.ytH = self.model.predict(X=self.xt)
         self.ytP = self.model.predict_proba(X=self.xt)
 
-    def scoreIS(self, methods=('accuracy',)):
-        scores = {}
-        for method in methods:
-            metrics, proba = Metrics.generator(method=method)
-            if proba:
-                yH = self.yP
-            else:
-                yH = self.yH
-            scores.update({method: metrics(self.y, yH)})
-        return scores
-
-    def scoreOOS(self, methods=('accuracy',)):
-        scores = {}
-        for method in methods:
-            metrics, proba = Metrics.generator(method=method)
-            if proba:
-                ytH = self.ytP
-            else:
-                ytH = self.ytH
-            scores.update({method: metrics(self.yt, ytH) if (self.yt is not None) else None})
-        return scores
-
     def scoreCV(self, methods: Iterable[str] = ('accuracy',), random_state: int = 1) -> Dict[str, float]:
         scoring = {}
         for method in methods:
@@ -293,6 +287,11 @@ class ModelNormalAbs(ModelAbs):
             scores.update({method: scoresRaw['test_' + method].mean()})
         return scores
 
+    @abstractmethod
+    def _getClassifier(self) -> skbase.ClassifierMixin:
+        """Return Sklearn base classifier"""
+        pass
+
     def printPerformance(self):
         methods = ('accuracy', 'accproba', 'logproba', 'aucproba', 'recall', 'precision')
         scoresIS, scoresCV, scoresOOS = self.score(methods)
@@ -301,13 +300,6 @@ class ModelNormalAbs(ModelAbs):
             print('{}\t (IS / CV / OOS): {:.2f} / {:.2f} / {:.2f}'.format(method, scoresIS[method],
                                                                           scoresCV[method], scoresOOS[method]))
         print('')
-
-    def plotROC(self):
-        fig, ax = plt.subplots()
-        self.staticPlotROC(self.y, self.yP[:, 1], ax=ax, label='IS', title='ROC: {}'.format(self.name))
-        self.staticPlotROC(self.yt, self.ytP[:, 1], ax=ax, label='OOS', title='ROC: {}'.format(self.name))
-        fig.set_tight_layout(True)
-        fig.show()
 
 
 class LogisticAbs(ModelNormalAbs):
@@ -318,9 +310,13 @@ class LogisticAbs(ModelNormalAbs):
     def __init__(self, model, name):
         ModelNormalAbs.__init__(self, model=model, name=name)
 
+    @abstractmethod
+    def _getClassifier(self) -> sklm.LogisticRegression:
+        pass
+
     def printCoefficients(self) -> None:
         """Print the fitted coefficients"""
-        coef = self.model.named_steps['clf'].coef_[0]
+        coef = self._getClassifier().coef_[0]
         assert len(coef) == len(self.x.columns)
         coefSrs = pd.Series(coef, index=self.x.columns)
         print('-----Coefficients-----')
@@ -333,11 +329,14 @@ class Logistic(LogisticAbs):
     Logistic classifier
     """
 
-    def __init__(self, scale=True, fit_intercept=False, C=1.):
+    def __init__(self, scale: bool = True, fit_intercept: bool = False, C: int = 1.):
         scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
         classifier = sklm.LogisticRegression(fit_intercept=fit_intercept, C=C, solver='lbfgs', penalty='l2')
         model = skpipe.Pipeline(steps=[('scaler', scaler), ('clf', classifier)])
         LogisticAbs.__init__(self, model=model, name='Logistic')
+
+    def _getClassifier(self):
+        return self.model.named_steps['clf']
 
     def printSummary(self):
         print('****** {} ******\n'.format(str.upper(self.name)))
@@ -347,20 +346,24 @@ class Logistic(LogisticAbs):
         self.printConfusion()
 
 
-class LogisticRidge(LogisticAbs):
+class LogisticRidgeCV(LogisticAbs):
     """
     Logistic classifier with Ridge CV penalty
+    Todo: Logistic Ridge with a specified number of degrees of freedom
     """
 
-    def __init__(self, scale=True, fit_intercept=False, Cs=10):
-        self.name = 'ABC Logistic Regression'
+    def __init__(self, scale: bool = True, fit_intercept: bool = False, Cs: int = 10):
+        self.name = 'ABC Logistic Regression CV'
         scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
         classifier = sklm.LogisticRegressionCV(fit_intercept=fit_intercept, Cs=Cs, cv=10, solver='lbfgs',
                                                penalty='l2')
         model = skpipe.Pipeline(steps=[('scaler', scaler), ('clf', classifier)])
         LogisticAbs.__init__(self, model=model, name='Logistic Ridge')
 
-    def printRidgeMultiplier(self):
+    def _getClassifier(self):
+        return self.model.named_steps['clf']
+
+    def printRidgeMultiplier(self) -> None:
         print('-----Ridge CV multiplier-----')
         print('Ridge Multiplier = {:.2f}'.format(self.model.named_steps['clf'].C_[0]))
         print('')
@@ -374,20 +377,34 @@ class LogisticRidge(LogisticAbs):
         self.printConfusion()
 
 
+class LogisticGAM(ModelAbs):
+    """
+    Additive Logistic classifier
+    Todo: next
+    """
+
+    def __init__(self):
+        model = pygam.LogisticGAM()
+        ModelAbs.__init__(self, model=model, name='Logistic GAM')
+
+
 class LogisticBestSubset(LogisticAbs):
     """
     Logistic classifier with k features pre-selected
     """
 
-    def __init__(self, scale=True, fit_intercept=False, k=5, C=1.):
+    def __init__(self, scale: bool = True, fit_intercept: bool = False, k: int = 5, C: int = 1.):
         scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
         featureSelector = skfs.SelectKBest(score_func=skfs.f_classif, k=k)
         classifier = sklm.LogisticRegression(fit_intercept=fit_intercept, C=C, solver='lbfgs', penalty='l2')
         model = skpipe.Pipeline(steps=[('scaler', scaler), ('fselect', featureSelector), ('clf', classifier)])
         LogisticAbs.__init__(self, model=model, name='Logistic kBest')
 
+    def _getClassifier(self):
+        return self.model.named_steps['clf']
+
     def printCoefficients(self):
-        coef = self.model.named_steps['clf'].coef_[0]
+        coef = self._getClassifier().coef_[0]
         support = self.model.named_steps['fselect'].get_support()
         assert len(coef) == len(self.x.columns[support])
         coefSrs = pd.Series(coef, index=self.x.columns[support])
@@ -408,15 +425,47 @@ class KNN(ModelNormalAbs):
     kNN classifier
     """
 
-    def __init__(self, scale=True, n_neighbors=10, weights='uniform'):
+    def __init__(self, scale: bool = True, n_neighbors: int = 10, weights: str = 'uniform'):
         scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
         classifier = sknbr.KNeighborsClassifier(n_neighbors=n_neighbors, weights=weights, metric='minkowski')
         model = skpipe.Pipeline(steps=[('scaler', scaler), ('clf', classifier)])
         ModelNormalAbs.__init__(self, model=model, name='kNN')
 
+    def _getClassifier(self) -> sknbr.KNeighborsClassifier:
+        return self.model.named_steps['clf']
+
     def printSummary(self):
         print('****** {} ******\n'.format(str.upper(self.name)))
         self.printSetsInfo()
+        self.printPerformance()
+        self.printConfusion()
+
+
+class KNNCV(KNN):
+    """
+    kNN classifier with CV for k
+    todo: check that CV does not give an optimistic score
+    """
+
+    def __init__(self, scale: bool = True, weights: str = 'uniform'):
+        grid = {'clf__n_neighbors': (5, 10, 20, 40)}
+        KNN.__init__(self, scale=scale, n_neighbors=grid['clf__n_neighbors'][0], weights=weights)
+        self.model = skms.GridSearchCV(self.model, param_grid=grid, scoring='accuracy', cv=5)
+        self.name = 'kNN CV'
+
+    def _getClassifier(self):
+        return self.model.best_estimator_.named_steps['clf']
+
+    def printBestK(self) -> None:
+        print('-----Best k-----')
+        print('k = {:d} with the score = {:.2f}'.format(self.model.best_params_['clf__n_neighbors'],
+                                                        self.model.best_score_))
+        print('')
+
+    def printSummary(self):
+        print('****** {} ******\n'.format(str.upper(self.name)))
+        self.printSetsInfo()
+        self.printBestK()
         self.printPerformance()
         self.printConfusion()
 
@@ -426,23 +475,35 @@ class Tree(ModelNormalAbs):
     Decision Tree classifier
     """
 
-    def __init__(self, scale=True, max_depth=3, class_weight='balanced', random_state=1):
+    def __init__(self, scale: bool = True, max_depth: int = 3, class_weight: str = 'balanced', random_state: int = 1):
         scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
-        classifier = sktree.DecisionTreeClassifier(criterion='gini', max_depth=max_depth, class_weight=class_weight,
+        classifier = sktree.DecisionTreeClassifier(criterion='gini', max_depth=max_depth, max_leaf_nodes=None,
+                                                   class_weight=class_weight,
                                                    splitter='best', min_samples_leaf=5, random_state=random_state)
         model = skpipe.Pipeline(steps=[('scaler', scaler), ('clf', classifier)])
         ModelNormalAbs.__init__(self, model=model, name='Decision Tree')
 
+    def _getClassifier(self) -> sktree.DecisionTreeClassifier:
+        return self.model.named_steps['clf']
+
+    def printFeatureImportance(self):
+        print('-----Feature Importance-----')
+        importance = self._getClassifier().feature_importances_
+        importanceSrs = pd.Series(importance, index=self.x.columns)
+        print(importanceSrs)
+        print('')
+
     def printSummary(self):
         print('****** {} ******\n'.format(str.upper(self.name)))
         self.printSetsInfo()
+        self.printFeatureImportance()
         self.printPerformance()
         self.printConfusion()
 
-    def visualizeTree(self):
-        dotData = sktree.export_graphviz(self.model.named_steps['clf'], precision=2, proportion=True,
-                                         feature_names=self.x.columns.values, class_names=['Dead', 'Alive'],
-                                         impurity=True, filled=True, out_file=None)
+    def visualizeTree(self) -> None:
+        dotData = sktree.export_graphviz(self._getClassifier(), precision = 2, proportion = True,
+                                         feature_names = self.x.columns.values, class_names = ['Dead','Alive'],
+                                         impurity = True, filled = True, out_file = None)
         imgPath = 'data\\temp\\tree.png'
         pydotplus.graph_from_dot_data(dotData).write_png(imgPath)
         image = img.imread(imgPath)
@@ -451,6 +512,37 @@ class Tree(ModelNormalAbs):
         ax.set_title('Graph: {}'.format(self.name))
         fig.set_tight_layout(True)
         fig.show()
+
+
+class TreeCV(Tree):
+    """
+    Decision Tree classifier with CV for max depth and max number of leaves
+    """
+
+    def __init__(self, scale=True, class_weight='balanced', random_state=1):
+        grid = {'clf__max_depth': (2, 3, 4), 'clf__max_leaf_nodes': (4, 6, 8, 12)}
+        Tree.__init__(self, scale=scale, max_depth=grid['clf__max_depth'][0],
+                      class_weight=class_weight, random_state=random_state)
+        self.model = skms.GridSearchCV(self.model, param_grid=grid, scoring='accuracy', cv=5)
+        self.name = 'Tree CV'
+
+    def printParameters(self):
+        print('-----Best Parameters-----')
+        print('max_depth = {:d} and max_leaf_nodes = {:d} with the score = {:.2f}'.
+              format(self.model.best_params_['clf__max_depth'] + 1, self.model.best_params_['clf__max_leaf_nodes'],
+                     self.model.best_score_))
+        print('')
+
+    def _getClassifier(self):
+        return self.model.best_estimator_.named_steps['clf']
+
+    def printSummary(self):
+        print('****** {} ******\n'.format(str.upper(self.name)))
+        self.printSetsInfo()
+        self.printParameters()
+        self.printFeatureImportance()
+        self.printPerformance()
+        self.printConfusion()
 
 
 if __name__ == '__main__':
