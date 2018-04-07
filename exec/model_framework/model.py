@@ -1,6 +1,5 @@
 """
 Classification model class
-
 Todo: to add todo-s
 """
 
@@ -12,7 +11,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pydotplus
-import pygam
+import pygam as gam
+import pygam.utils as gamutils
+from sklearn import base as skbase
 from sklearn import feature_selection as skfs
 from sklearn import linear_model as sklm
 from sklearn import metrics as skmtcs
@@ -21,7 +22,6 @@ from sklearn import neighbors as sknbr
 from sklearn import pipeline as skpipe
 from sklearn import preprocessing as skprcss
 from sklearn import tree as sktree
-from sklearn import base as skbase
 
 import exec.model_framework.utilmodel as utmdl
 
@@ -196,6 +196,15 @@ class ModelAbs(ABC):
         print(confOOSdf)
         print('')
 
+    def printPerformance(self):
+        methods = ('accuracy', 'accproba', 'logproba', 'aucproba', 'recall', 'precision')
+        scoresIS, scoresCV, scoresOOS = self.score(methods)
+        print('-----Performance-----')
+        for method in methods:
+            print('{}\t (IS / CV / OOS): {:.2f} / {:.2f} / {:.2f}'.format(method, scoresIS[method],
+                                                                          scoresCV[method], scoresOOS[method]))
+        print('')
+
     @abstractmethod
     def printSummary(self) -> None:
         """Print a summary on the classifier"""
@@ -292,15 +301,6 @@ class ModelNormalAbs(ModelAbs):
         """Return Sklearn base classifier"""
         pass
 
-    def printPerformance(self):
-        methods = ('accuracy', 'accproba', 'logproba', 'aucproba', 'recall', 'precision')
-        scoresIS, scoresCV, scoresOOS = self.score(methods)
-        print('-----Performance-----')
-        for method in methods:
-            print('{}\t (IS / CV / OOS): {:.2f} / {:.2f} / {:.2f}'.format(method, scoresIS[method],
-                                                                          scoresCV[method], scoresOOS[method]))
-        print('')
-
 
 class LogisticAbs(ModelNormalAbs):
     """
@@ -377,17 +377,6 @@ class LogisticRidgeCV(LogisticAbs):
         self.printConfusion()
 
 
-class LogisticGAM(ModelAbs):
-    """
-    Additive Logistic classifier
-    Todo: next
-    """
-
-    def __init__(self):
-        model = pygam.LogisticGAM()
-        ModelAbs.__init__(self, model=model, name='Logistic GAM')
-
-
 class LogisticBestSubset(LogisticAbs):
     """
     Logistic classifier with k features pre-selected
@@ -418,6 +407,108 @@ class LogisticBestSubset(LogisticAbs):
         self.printCoefficients()
         self.printPerformance()
         self.printConfusion()
+
+
+class _SkLogisticGAM(gam.LogisticGAM):
+    def __init__(self, lam=0.6, max_iter=100, n_splines=25, spline_order=3,
+                 penalties='auto', dtype='auto', tol=1e-4,
+                 callbacks=('deviance', 'diffs', 'accuracy'),
+                 fit_intercept=True, fit_linear=False, fit_splines=True,
+                 constraints=None):
+        gam.LogisticGAM.__init__(self, lam=lam, max_iter=max_iter, n_splines=n_splines, spline_order=spline_order,
+                                 penalties=penalties, dtype=dtype, tol=tol,
+                                 callbacks=callbacks,
+                                 fit_intercept=fit_intercept, fit_linear=fit_linear, fit_splines=fit_splines,
+                                 constraints=constraints)
+
+    def get_params(self, deep=False):
+        params = gam.LogisticGAM.get_params(self, deep=deep)
+        del params['verbose']
+        return params
+
+    def predict_proba(self, X):
+        proba = gam.LogisticGAM.predict_proba(self, X)
+        skProba = np.zeros((len(proba), 2), dtype=float)
+        skProba[:, 1] = proba
+        skProba[:, 0] = 1 - proba
+        return skProba
+
+
+class LogisticGAM(ModelNormalAbs):
+    """
+    Additive Logistic classifier
+    Todo: next
+    """
+
+    def __init__(self, scale=True, fit_intercept=False, n_splines=15, lam=1., constraints=None):
+        scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
+        classifier = _SkLogisticGAM(fit_intercept=fit_intercept, n_splines=n_splines, lam=lam, constraints=constraints)
+        model = skpipe.Pipeline(steps=[('scaler', scaler), ('clf', classifier)])
+        ModelNormalAbs.__init__(self, model=model, name='Logistic GAM')
+
+    def _getClassifier(self) -> gam.LogisticGAM:
+        return self.model.named_steps['clf']
+
+    def printStatistics(self):
+        print('-----Statistics-----')
+        data = []
+        for i in np.arange(len(self._getClassifier()._n_splines)):
+            data.append({
+                'feature_func': '{:_<15}'.format(str(self.x.columns.values[i])),
+                'n_splines': self._getClassifier()._n_splines[i],
+                'spline_order': self._getClassifier()._spline_order[i],
+                'fit_linear': self._getClassifier()._fit_linear[i],
+                'dtype': self._getClassifier()._dtype[i],
+                'lam': np.round(self._getClassifier()._lam[i + self._getClassifier().fit_intercept], 4),
+                'p_value': '%.2e' % (self._getClassifier().statistics_['p_values'][i + self._getClassifier().fit_intercept]),
+                'sig_code': gamutils.sig_code(self._getClassifier().statistics_['p_values'][i + self._getClassifier().fit_intercept])
+            })
+        if self._getClassifier().fit_intercept:
+            data.append({
+                'feature_func': 'intercept',
+                'n_splines': '',
+                'spline_order': '',
+                'fit_linear': '',
+                'dtype': '',
+                'lam': '',
+                'p_value': '%.2e' % (self._getClassifier().statistics_['p_values'][0]),
+                'sig_code': gamutils.sig_code(self._getClassifier().statistics_['p_values'][0])
+            })
+        fmt = [
+            ('Feature Function', 'feature_func', 18),
+            ('Data Type', 'dtype', 14),
+            ('Num Splines', 'n_splines', 13),
+            ('Spline Order', 'spline_order', 13),
+            ('Linear Fit', 'fit_linear', 11),
+            ('Lambda', 'lam', 10),
+            ('P > x', 'p_value', 10),
+            ('Sig. Code', 'sig_code', 10)
+        ]
+        print(gamutils.TablePrinter(fmt, ul='=')(data))
+        print("=" * 106)
+        print("Significance codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1")
+        print()
+
+    def printSummary(self):
+        print('****** {} ******\n'.format(str.upper(self.name)))
+        self.printSetsInfo()
+        self.printStatistics()
+        self.printPerformance()
+        self.printConfusion()
+
+    def plotFeatureFit(self):
+        gridGAM = gamutils.generate_X_grid(self._getClassifier())
+        #plt.rcParams['figure.figsize'] = (28, 8)
+        fig, axs = plt.subplots(1, len(self.x.columns.values))
+        titles = self.x.columns.values
+        for i, ax in enumerate(axs):
+            pdep, confi = self._getClassifier().partial_dependence(gridGAM, feature=i, width=.95)
+            ax.plot(gridGAM[:, i], pdep)
+            ax.plot(gridGAM[:, i], confi[0][:, 0], c='grey', ls='--')
+            ax.plot(gridGAM[:, i], confi[0][:, 1], c='grey', ls='--')
+            ax.set_title(titles[i])
+        fig.set_tight_layout(True)
+        fig.show()
 
 
 class KNN(ModelNormalAbs):
@@ -501,9 +592,9 @@ class Tree(ModelNormalAbs):
         self.printConfusion()
 
     def visualizeTree(self) -> None:
-        dotData = sktree.export_graphviz(self._getClassifier(), precision = 2, proportion = True,
-                                         feature_names = self.x.columns.values, class_names = ['Dead','Alive'],
-                                         impurity = True, filled = True, out_file = None)
+        dotData = sktree.export_graphviz(self._getClassifier(), precision=2, proportion=True,
+                                         feature_names=self.x.columns.values, class_names=['Dead', 'Alive'],
+                                         impurity=True, filled=True, out_file=None)
         imgPath = 'data\\temp\\tree.png'
         pydotplus.graph_from_dot_data(dotData).write_png(imgPath)
         image = img.imread(imgPath)
