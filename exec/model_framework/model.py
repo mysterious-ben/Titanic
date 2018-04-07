@@ -5,6 +5,7 @@ Todo: to add todo-s
 
 from abc import ABC, abstractmethod
 from typing import Iterable, Dict, Callable, Tuple
+import warnings
 
 import matplotlib.image as img
 import matplotlib.pyplot as plt
@@ -22,6 +23,7 @@ from sklearn import neighbors as sknbr
 from sklearn import pipeline as skpipe
 from sklearn import preprocessing as skprcss
 from sklearn import tree as sktree
+from sklearn import ensemble as skens
 
 import exec.model_framework.utilmodel as utmdl
 
@@ -437,7 +439,6 @@ class _SkLogisticGAM(gam.LogisticGAM):
 class LogisticGAM(ModelNormalAbs):
     """
     Additive Logistic classifier
-    Todo: next
     """
 
     def __init__(self, scale=True, fit_intercept=False, n_splines=15, lam=1., constraints=None):
@@ -460,8 +461,10 @@ class LogisticGAM(ModelNormalAbs):
                 'fit_linear': self._getClassifier()._fit_linear[i],
                 'dtype': self._getClassifier()._dtype[i],
                 'lam': np.round(self._getClassifier()._lam[i + self._getClassifier().fit_intercept], 4),
-                'p_value': '%.2e' % (self._getClassifier().statistics_['p_values'][i + self._getClassifier().fit_intercept]),
-                'sig_code': gamutils.sig_code(self._getClassifier().statistics_['p_values'][i + self._getClassifier().fit_intercept])
+                'p_value': '%.2e' % (
+                    self._getClassifier().statistics_['p_values'][i + self._getClassifier().fit_intercept]),
+                'sig_code': gamutils.sig_code(
+                    self._getClassifier().statistics_['p_values'][i + self._getClassifier().fit_intercept])
             })
         if self._getClassifier().fit_intercept:
             data.append({
@@ -498,7 +501,7 @@ class LogisticGAM(ModelNormalAbs):
 
     def plotFeatureFit(self):
         gridGAM = gamutils.generate_X_grid(self._getClassifier())
-        #plt.rcParams['figure.figsize'] = (28, 8)
+        # plt.rcParams['figure.figsize'] = (28, 8)
         fig, axs = plt.subplots(1, len(self.x.columns.values))
         titles = self.x.columns.values
         for i, ax in enumerate(axs):
@@ -566,9 +569,10 @@ class Tree(ModelNormalAbs):
     Decision Tree classifier
     """
 
-    def __init__(self, scale: bool = True, max_depth: int = 3, class_weight: str = 'balanced', random_state: int = 1):
+    def __init__(self, scale: bool = True, max_depth: int = 3, max_leaf_nodes=None,
+                 class_weight: str = 'balanced', random_state: int = 1):
         scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
-        classifier = sktree.DecisionTreeClassifier(criterion='gini', max_depth=max_depth, max_leaf_nodes=None,
+        classifier = sktree.DecisionTreeClassifier(criterion='gini', max_depth=max_depth, max_leaf_nodes=max_leaf_nodes,
                                                    class_weight=class_weight,
                                                    splitter='best', min_samples_leaf=5, random_state=random_state)
         model = skpipe.Pipeline(steps=[('scaler', scaler), ('clf', classifier)])
@@ -610,7 +614,7 @@ class TreeCV(Tree):
     Decision Tree classifier with CV for max depth and max number of leaves
     """
 
-    def __init__(self, scale=True, class_weight='balanced', random_state=1):
+    def __init__(self, scale: bool = True, class_weight: str = 'balanced', random_state: int = 1):
         grid = {'clf__max_depth': (2, 3, 4), 'clf__max_leaf_nodes': (4, 6, 8, 12)}
         Tree.__init__(self, scale=scale, max_depth=grid['clf__max_depth'][0],
                       class_weight=class_weight, random_state=random_state)
@@ -631,6 +635,41 @@ class TreeCV(Tree):
         print('****** {} ******\n'.format(str.upper(self.name)))
         self.printSetsInfo()
         self.printParameters()
+        self.printFeatureImportance()
+        self.printPerformance()
+        self.printConfusion()
+
+
+class RandomForest(ModelNormalAbs):
+    """
+    Random Forest classifier (Decision Trees + Bagging)
+    """
+
+    def __init__(self, scale: bool = True, n_estimators: int = 16, max_features: int = 4,
+                 max_depth: int = None, max_leaf_nodes: int = 12,
+                 class_weight: str = 'balanced', random_state: int = 1):
+        scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
+        classifier = skens.RandomForestClassifier(n_estimators=n_estimators, max_features=max_features,
+                                                  max_leaf_nodes=max_leaf_nodes,
+                                                  bootstrap=True, criterion='gini', max_depth=max_depth,
+                                                  class_weight=class_weight,
+                                                  min_samples_leaf=5, random_state=random_state)
+        model = skpipe.Pipeline(steps=[('scaler', scaler), ('clf', classifier)])
+        ModelNormalAbs.__init__(self, model=model, name='Random Forest')
+
+    def _getClassifier(self) -> skens.RandomForestClassifier:
+        return self.model.named_steps['clf']
+
+    def printFeatureImportance(self):
+        print('-----Feature Importance-----')
+        importance = self._getClassifier().feature_importances_
+        importanceSrs = pd.Series(importance, index=self.x.columns)
+        print(importanceSrs)
+        print('')
+
+    def printSummary(self):
+        print('****** {} ******\n'.format(str.upper(self.name)))
+        self.printSetsInfo()
         self.printFeatureImportance()
         self.printPerformance()
         self.printConfusion()
