@@ -1,11 +1,9 @@
 """
 Classification model class
-Todo: to add todo-s
 """
 
 from abc import ABC, abstractmethod
-from typing import Iterable, Dict, Callable, Tuple
-import warnings
+from typing import Iterable, Dict, Callable, Tuple, Union
 
 import matplotlib.image as img
 import matplotlib.pyplot as plt
@@ -15,6 +13,7 @@ import pydotplus
 import pygam as gam
 import pygam.utils as gamutils
 from sklearn import base as skbase
+from sklearn import ensemble as skens
 from sklearn import feature_selection as skfs
 from sklearn import linear_model as sklm
 from sklearn import metrics as skmtcs
@@ -23,7 +22,7 @@ from sklearn import neighbors as sknbr
 from sklearn import pipeline as skpipe
 from sklearn import preprocessing as skprcss
 from sklearn import tree as sktree
-from sklearn import ensemble as skens
+# import xgboost
 
 import exec.model_framework.utilmodel as utmdl
 
@@ -263,6 +262,16 @@ class ModelAbs(ABC):
     #         scoresCV[i] = ModelAbs.staticScore(y=y, yH=yH, method=method)
     #     return scoresCV
 
+    @staticmethod
+    def balancedWeights(y):
+        posRate = np.sum(y) / len(y)
+        weights = y * (1. - posRate) + (1. - y) * posRate
+        return weights
+
+    def _getFeatureNames(self):
+        """Return names of the original features"""
+        return self.x.columns.values
+
 
 class ModelNormalAbs(ModelAbs):
     """
@@ -319,8 +328,8 @@ class LogisticAbs(ModelNormalAbs):
     def printCoefficients(self) -> None:
         """Print the fitted coefficients"""
         coef = self._getClassifier().coef_[0]
-        assert len(coef) == len(self.x.columns)
-        coefSrs = pd.Series(coef, index=self.x.columns)
+        assert len(coef) == len(self._getFeatureNames())
+        coefSrs = pd.Series(coef, index=self._getFeatureNames())
         print('-----Coefficients-----')
         print(coefSrs)
         print('')
@@ -397,8 +406,8 @@ class LogisticBestSubset(LogisticAbs):
     def printCoefficients(self):
         coef = self._getClassifier().coef_[0]
         support = self.model.named_steps['fselect'].get_support()
-        assert len(coef) == len(self.x.columns[support])
-        coefSrs = pd.Series(coef, index=self.x.columns[support])
+        assert len(coef) == len(self._getFeatureNames()[support])
+        coefSrs = pd.Series(coef, index=self._getFeatureNames()[support])
         print('-----Coefficients-----')
         print(coefSrs)
         print('')
@@ -455,7 +464,7 @@ class LogisticGAM(ModelNormalAbs):
         data = []
         for i in np.arange(len(self._getClassifier()._n_splines)):
             data.append({
-                'feature_func': '{:_<15}'.format(str(self.x.columns.values[i])),
+                'feature_func': '{:_<15}'.format(str(self._getFeatureNames()[i])),
                 'n_splines': self._getClassifier()._n_splines[i],
                 'spline_order': self._getClassifier()._spline_order[i],
                 'fit_linear': self._getClassifier()._fit_linear[i],
@@ -499,13 +508,17 @@ class LogisticGAM(ModelNormalAbs):
         self.printPerformance()
         self.printConfusion()
 
-    def plotFeatureFit(self):
+    def plotFeatureFit(self) -> None:
+        """
+        Partial dependence plot (?)
+        Todo: implement a generic Partial Dependence plot and compare
+        """
         gridGAM = gamutils.generate_X_grid(self._getClassifier())
         # plt.rcParams['figure.figsize'] = (28, 8)
-        fig, axs = plt.subplots(1, len(self.x.columns.values))
-        titles = self.x.columns.values
+        fig, axs = plt.subplots(1, len(self._getFeatureNames()))
+        titles = self._getFeatureNames()
         for i, ax in enumerate(axs):
-            pdep, confi = self._getClassifier().partial_dependence(gridGAM, feature=i, width=.95)
+            pdep, confi = self._getClassifier().partial_dependence(gridGAM, feature=i, width=.9)
             ax.plot(gridGAM[:, i], pdep)
             ax.plot(gridGAM[:, i], confi[0][:, 0], c='grey', ls='--')
             ax.plot(gridGAM[:, i], confi[0][:, 1], c='grey', ls='--')
@@ -538,7 +551,7 @@ class KNN(ModelNormalAbs):
 class KNNCV(KNN):
     """
     kNN classifier with CV for k
-    todo: check that CV does not give an optimistic score
+    Todo: check that CV does not give an optimistic score when random states are chained
     """
 
     def __init__(self, scale: bool = True, weights: str = 'uniform'):
@@ -566,11 +579,11 @@ class KNNCV(KNN):
 
 class Tree(ModelNormalAbs):
     """
-    Decision Tree classifier
+    Decision Tree classifier (CART algorithm)
     """
 
-    def __init__(self, scale: bool = True, max_depth: int = 3, max_leaf_nodes=None,
-                 class_weight: str = 'balanced', random_state: int = 1):
+    def __init__(self, scale: bool = True, max_depth: Union[int, None] = 3, max_leaf_nodes: Union[int, None] = None,
+                 class_weight: Union[None, str] = 'balanced', random_state: Union[int, None] = 1):
         scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
         classifier = sktree.DecisionTreeClassifier(criterion='gini', max_depth=max_depth, max_leaf_nodes=max_leaf_nodes,
                                                    class_weight=class_weight,
@@ -597,7 +610,7 @@ class Tree(ModelNormalAbs):
 
     def visualizeTree(self) -> None:
         dotData = sktree.export_graphviz(self._getClassifier(), precision=2, proportion=True,
-                                         feature_names=self.x.columns.values, class_names=['Dead', 'Alive'],
+                                         feature_names=self._getFeatureNames(), class_names=['Dead', 'Alive'],
                                          impurity=True, filled=True, out_file=None)
         imgPath = 'data\\temp\\tree.png'
         pydotplus.graph_from_dot_data(dotData).write_png(imgPath)
@@ -614,7 +627,8 @@ class TreeCV(Tree):
     Decision Tree classifier with CV for max depth and max number of leaves
     """
 
-    def __init__(self, scale: bool = True, class_weight: str = 'balanced', random_state: int = 1):
+    def __init__(self, scale: bool = True, class_weight: Union[None, str] = 'balanced',
+                 random_state: Union[int, None] = 1):
         grid = {'clf__max_depth': (2, 3, 4), 'clf__max_leaf_nodes': (4, 6, 8, 12)}
         Tree.__init__(self, scale=scale, max_depth=grid['clf__max_depth'][0],
                       class_weight=class_weight, random_state=random_state)
@@ -645,9 +659,9 @@ class RandomForest(ModelNormalAbs):
     Random Forest classifier (Decision Trees + Bagging)
     """
 
-    def __init__(self, scale: bool = True, n_estimators: int = 16, max_features: int = 4,
-                 max_depth: int = None, max_leaf_nodes: int = 12,
-                 class_weight: str = 'balanced', random_state: int = 1):
+    def __init__(self, scale: bool = True, n_estimators: int = 128, max_features: Union[int, None] = None,
+                 max_depth: Union[int, None] = None, max_leaf_nodes: Union[int, None] = 12,
+                 class_weight: Union[None, str] = 'balanced', random_state: Union[int, None] = 1):
         scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
         classifier = skens.RandomForestClassifier(n_estimators=n_estimators, max_features=max_features,
                                                   max_leaf_nodes=max_leaf_nodes,
@@ -663,7 +677,7 @@ class RandomForest(ModelNormalAbs):
     def printFeatureImportance(self):
         print('-----Feature Importance-----')
         importance = self._getClassifier().feature_importances_
-        importanceSrs = pd.Series(importance, index=self.x.columns)
+        importanceSrs = pd.Series(importance, index=self._getFeatureNames())
         print(importanceSrs)
         print('')
 
@@ -675,5 +689,126 @@ class RandomForest(ModelNormalAbs):
         self.printConfusion()
 
 
+class BoostedTree(ModelNormalAbs):
+    """
+    Boosted Trees (Gradient Boosting)
+    """
+
+    def __init__(self, scale: bool = True, n_estimators: int = 128, loss: str = 'deviance', learning_rate: float = 1.,
+                 subsample: float = 1., max_features: Union[int, None] = None,
+                 max_depth: Union[int, None] = 2, max_leaf_nodes: Union[int, None] = None,
+                 random_state: int = 1, balanceWeights: bool = False):
+        scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
+        if not balanceWeights:
+            classifier = skens.GradientBoostingClassifier(n_estimators=n_estimators, loss=loss,
+                                                          learning_rate=learning_rate, subsample=subsample,
+                                                          max_features=max_features, max_leaf_nodes=max_leaf_nodes,
+                                                          max_depth=max_depth, min_samples_leaf=5,
+                                                          random_state=random_state)
+        else:
+            class GradientBoostingClassifierBalanced(skens.GradientBoostingClassifier):
+                def fit(self, X, y, sample_weight=None, monitor=None):
+                    weights = ModelAbs.balancedWeights(y)
+                    return skens.GradientBoostingClassifier.fit(self, X=X, y=y, sample_weight=weights)
+
+            classifier = GradientBoostingClassifierBalanced(n_estimators=n_estimators, loss=loss,
+                                                            learning_rate=learning_rate, subsample=subsample,
+                                                            max_features=max_features, max_leaf_nodes=max_leaf_nodes,
+                                                            max_depth=max_depth, min_samples_leaf=5,
+                                                            random_state=random_state)
+
+        # classifier = skens.GradientBoostingClassifier(n_estimators=n_estimators, loss=loss,
+        #                                               learning_rate=learning_rate, subsample=subsample,
+        #                                               max_features=max_features, max_leaf_nodes=max_leaf_nodes,
+        #                                               max_depth=max_depth, min_samples_leaf=5,
+        #                                               random_state=random_state)
+        # if balanceWeights:
+        #     def fitBalanced(self, X, y, sample_weight=None, monitor=None):
+        #         weights = ModelAbs.balancedWeights(y)
+        #         return self.fit(X=X, y=y, sample_weight=weights, monitor=monitor)
+        #
+        #     classifier.fit = MethodType(fitBalanced, classifier)
+
+        model = skpipe.Pipeline(steps=[('scaler', scaler), ('clf', classifier)])
+        ModelNormalAbs.__init__(self, model=model, name='Boosted Tree')
+
+    def _getClassifier(self) -> skens.GradientBoostingClassifier:
+        return self.model.named_steps['clf']
+
+    def printFeatureImportance(self):
+        print('-----Feature Importance-----')
+        importance = self._getClassifier().feature_importances_
+        importanceSrs = pd.Series(importance, index=self._getFeatureNames())
+        print(importanceSrs)
+        print('')
+
+    def printSummary(self):
+        print('****** {} ******\n'.format(str.upper(self.name)))
+        self.printSetsInfo()
+        self.printFeatureImportance()
+        self.printPerformance()
+        self.printConfusion()
+
+    def plotPartialDependence(self, features=None) -> None:
+        """Partial Dependence Plot"""
+        if features is None: features = self._getFeatureNames()
+        xScaled = self.model.named_steps['scaler'].transform(self.x)
+        fig, axs = skens.partial_dependence.plot_partial_dependence(self._getClassifier(), X=xScaled, features=features,
+                                                                    feature_names=self._getFeatureNames(),
+                                                                    percentiles=(0.05, 0.95), grid_resolution=100)
+        # fig.suptitle('Partial Dependence: {}'.format(self.name))
+        # fig.subplots_adjust(top=0.9)
+        fig.set_tight_layout(True)
+        fig.show()
+
+
+class BoostedTreeXGBoost(ModelNormalAbs):
+    """
+    Boosted Trees (XGBoost)
+    UNDER DEVELOPMENT
+    Todo: complete BoostedTreeXGBoost (fix import xgboost and add balanced weight scaling)
+    """
+    pass
+
+
+#     def __init__(self, scale: bool = True, n_estimators: int = 128, loss: str = 'deviance', learning_rate: float = 1.,
+#                  subsample: int = 1., max_features: Union[int, None] = None,
+#                  max_depth: Union[int, None] = 2, max_leaf_nodes: Union[int, None] = None,
+#                  random_state: int = 1, balanceWeights: bool = False):
+#         scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
+#
+#         if balanceWeights:
+#             scale_pos_weight = 1
+#         else:
+#             scale_pos_weight = 1
+#         classifier = xgboost.XGBClassifier(n_estimators=n_estimators, loss=loss,
+#                                            learning_rate=learning_rate, subsample=subsample,
+#                                            max_features=max_features, max_leaf_nodes=max_leaf_nodes,
+#                                            max_depth=max_depth, min_samples_leaf=5, scale_pos_weight=scale_pos_weight,
+#                                            random_state=random_state)
+#
+#         model = skpipe.Pipeline(steps=[('scaler', scaler), ('clf', classifier)])
+#         ModelNormalAbs.__init__(self, model=model, name='Boosted Tree (XGBoost)')
+#
+#     def _getClassifier(self) -> xgboost.XGBClassifier:
+#         return self.model.named_steps['clf']
+#
+#     def printFeatureImportance(self):
+#         print('-----Feature Importance-----')
+#         importance = self._getClassifier().feature_importances_
+#         importanceSrs = pd.Series(importance, index=self._getFeatureNames())
+#         print(importanceSrs)
+#         print('')
+#
+#     def printSummary(self):
+#         print('****** {} ******\n'.format(str.upper(self.name)))
+#         self.printSetsInfo()
+#         self.printFeatureImportance()
+#         self.printPerformance()
+#         self.printConfusion()
+
+
 if __name__ == '__main__':
     print('Package Model v. 0.1.0')
+
+    # xgboost.XGBClassifier()
