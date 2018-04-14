@@ -4,6 +4,7 @@ Classification model class
 
 from abc import ABC, abstractmethod
 from typing import Iterable, Dict, Callable, Tuple, Union
+import numbers
 
 import matplotlib.image as img
 import matplotlib.pyplot as plt
@@ -22,6 +23,11 @@ from sklearn import neighbors as sknbr
 from sklearn import pipeline as skpipe
 from sklearn import preprocessing as skprcss
 from sklearn import tree as sktree
+from sklearn.utils import estimator_checks as skutilcheck
+from sklearn.utils import validation as skutilvalid
+from sklearn.utils import multiclass as skutilmult
+from statsmodels.nonparametric import kernel_regression as smkernel
+from statsmodels.nonparametric import _kernel_base as smkernelbase
 # import xgboost
 
 import exec.model_framework.utilmodel as utmdl
@@ -420,7 +426,11 @@ class LogisticBestSubset(LogisticAbs):
         self.printConfusion()
 
 
-class _SkLogisticGAM(gam.LogisticGAM):
+class _LogisticGAMSklearn(gam.LogisticGAM):
+    """
+    Sklearn-compatible Additive Logistic base classifier
+    """
+
     def __init__(self, lam=0.6, max_iter=100, n_splines=25, spline_order=3,
                  penalties='auto', dtype='auto', tol=1e-4,
                  callbacks=('deviance', 'diffs', 'accuracy'),
@@ -452,7 +462,8 @@ class LogisticGAM(ModelNormalAbs):
 
     def __init__(self, scale=True, fit_intercept=False, n_splines=15, lam=1., constraints=None):
         scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
-        classifier = _SkLogisticGAM(fit_intercept=fit_intercept, n_splines=n_splines, lam=lam, constraints=constraints)
+        classifier = _LogisticGAMSklearn(fit_intercept=fit_intercept, n_splines=n_splines, lam=lam,
+                                         constraints=constraints)
         model = skpipe.Pipeline(steps=[('scaler', scaler), ('clf', classifier)])
         ModelNormalAbs.__init__(self, model=model, name='Logistic GAM')
 
@@ -525,6 +536,83 @@ class LogisticGAM(ModelNormalAbs):
             ax.set_title(titles[i])
         fig.set_tight_layout(True)
         fig.show()
+
+
+class _LogisticLinearLocalSklearn(skbase.BaseEstimator, skbase.ClassifierMixin):
+    """
+    Sklearn-compatible Local Logistic classifier (using Local Linear as a proxy)
+    """
+
+    def __init__(self, reg_type: str = 'll', bw: Union[str, float, Iterable] = 'cv_ls'):
+        self.reg_type = reg_type
+        self.bw = bw
+
+    def fit(self, X: Union[pd.DataFrame, np.ndarray], y: Union[pd.DataFrame, np.ndarray, Iterable]) \
+            -> skbase.ClassifierMixin:
+        X, y = self._check_X_y_fit(X, y)
+        # self.classes_ = skutilmult.unique_labels(y)
+        self.nfeatures_ = X.shape[1]
+        bw = np.full(self.nfeatures_, self.bw) if isinstance(self.bw, numbers.Number) else self.bw
+
+        self.model_ = smkernel.KernelReg(endog=y * 2 - 1, exog=X, var_type='c' * self.nfeatures_,
+                                         reg_type=self.reg_type, bw=bw,
+                                         defaults=smkernelbase.EstimatorSettings(efficient=False))
+        return self
+
+    def decision_function(self, X) -> np.ndarray:
+        skutilvalid.check_is_fitted(self, ['model_'])
+        X = self._check_X_predict(X)
+        dsn_pred, mgn_pred = self.model_.fit(data_predict=X)
+        return dsn_pred
+
+    def predict(self, X) -> np.ndarray:
+        skutilvalid.check_is_fitted(self, ['model_'])
+        dsn_pred = self.decision_function(X)
+        y_pred = (dsn_pred > 0).astype(int)
+        return y_pred
+
+    def predict_proba(self, X) -> np.ndarray:
+        skutilvalid.check_is_fitted(self, ['model_'])
+        dsn_pred = self.decision_function(X)
+        proba_pred = np.zeros((X.shape[0], 2), dtype=np.float)
+        proba_pred[:, 1] = 1 / (1 + np.exp(-dsn_pred))
+        proba_pred[:, 0] = 1 - proba_pred[:, 0]
+        return proba_pred
+
+    def _check_X_y_fit(self, X, y):
+        X, y = skutilvalid.check_X_y(X, y)
+        assert np.all(np.unique(y) == np.array([0, 1]))
+        return X, y
+
+    def _check_X_predict(self, X):
+        X = skutilvalid.check_array(X)
+        assert X.shape[1] == self.nfeatures_, "Wrong X shape"
+        return X
+
+    # def score(self, X, y, sample_weight=None):
+    #     pass
+
+
+class LogisticLinearLocal(ModelNormalAbs):
+    """
+    Local Logistic classifier (Linear Proxy)
+    Todo: implement genuine Local Logistic with weights and add statistics
+    """
+
+    def __init__(self, scale=True, reg_type: str = 'll', bw: Union[str, float, Iterable] = 'cv_ls'):
+        scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
+        classifier = _LogisticLinearLocalSklearn(reg_type=reg_type, bw=bw)
+        model = skpipe.Pipeline(steps=[('scaler', scaler), ('clf', classifier)])
+        ModelNormalAbs.__init__(self, model=model, name='Logistic Local (Linear Proxy)')
+
+    def _getClassifier(self) -> skbase.ClassifierMixin:
+        return self.model.named_steps['clf']
+
+    def printSummary(self):
+        print('****** {} ******\n'.format(str.upper(self.name)))
+        self.printSetsInfo()
+        self.printPerformance()
+        self.printConfusion()
 
 
 class KNN(ModelNormalAbs):
@@ -812,3 +900,5 @@ if __name__ == '__main__':
     print('Package Model v. 0.1.0')
 
     # xgboost.XGBClassifier()
+
+    skutilcheck.check_estimator(_LogisticLocalSklearn)
