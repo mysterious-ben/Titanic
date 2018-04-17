@@ -25,9 +25,11 @@ from sklearn import preprocessing as skprcss
 from sklearn import tree as sktree
 from sklearn.utils import estimator_checks as skutilcheck
 from sklearn.utils import validation as skutilvalid
-from sklearn.utils import multiclass as skutilmult
 from statsmodels.nonparametric import kernel_regression as smkernel
 from statsmodels.nonparametric import _kernel_base as smkernelbase
+from theano import shared
+import pymc3 as pm
+from pymc3 import math as pmmath
 # import xgboost
 
 import exec.model_framework.utilmodel as utmdl
@@ -615,6 +617,71 @@ class LogisticLinearLocal(ModelNormalAbs):
         self.printConfusion()
 
 
+class _LogisticBayesianSklearn(skbase.BaseEstimator, skbase.ClassifierMixin):
+    """
+    Sklearn-compatible Bayesian Logistic classifier
+    """
+
+    def __init__(self, featuresSd=10, nsamplesFit=200, nsamplesPredict=100):
+        self.featuresSd = featuresSd
+        self.nsamplesFit = nsamplesFit
+        self.nsamplesPredict= nsamplesPredict
+
+    def fit(self, X: Union[pd.DataFrame, np.ndarray], y: Union[pd.DataFrame, np.ndarray, Iterable]) \
+            -> skbase.ClassifierMixin:
+        X, y = self._check_X_y_fit(X, y)
+        self.X_shared_ = shared(X)
+        self.y_shared_ = shared(y)
+        self.nfeatures_ = X.shape[1]
+        self.model_ = pm.Model(name='dd')
+        # self.model_.Var('beta', pm.Normal(mu=0, sd=self.featuresSd))
+        with self.model_:
+            beta = pm.Normal('beta', mu=0, sd=self.featuresSd, shape=self.nfeatures_)
+            mu = pm.Deterministic('mu', var=pmmath.dot(beta, self.X_shared_.T))
+            y_obs = pm.Bernoulli('y_obs', p=pm.invlogit(mu), observed=self.y_shared_)
+            self.trace_ = pm.sample(draws=self.nsamplesFit)
+        return self
+
+    def decision_function(self, X) -> np.ndarray:
+        skutilvalid.check_is_fitted(self, ['model_'])
+        X = self._check_X_predict(X)
+        self.X_shared_.set_value(X)
+        self.y_shared_.set_value(np.zeros(X.shape[0]))
+        with self.model_:
+            post_pred = pm.sample_ppc(self.trace_, samples=self.nsamplesPredict)['y_obs'].mean(axis=0)
+
+    def predict(self, X) -> np.ndarray:
+        skutilvalid.check_is_fitted(self, ['model_'])
+        dsn_pred = self.decision_function(X)
+        y_pred = (dsn_pred > 0).astype(int)
+        return y_pred
+
+    def predict_proba(self, X) -> np.ndarray:
+        skutilvalid.check_is_fitted(self, ['model_'])
+        dsn_pred = self.decision_function(X)
+        proba_pred = np.zeros((X.shape[0], 2), dtype=np.float)
+        proba_pred[:, 1] = 1 / (1 + np.exp(-dsn_pred))
+        proba_pred[:, 0] = 1 - proba_pred[:, 0]
+        return proba_pred
+
+    def _check_X_y_fit(self, X, y):
+        X, y = skutilvalid.check_X_y(X, y)
+        assert np.all(np.unique(y) == np.array([0, 1]))
+        return X, y
+
+    def _check_X_predict(self, X):
+        X = skutilvalid.check_array(X)
+        assert X.shape[1] == self.nfeatures_, "Wrong X shape"
+        return X
+
+
+class LogisticBayesian(ModelNormalAbs):
+    """
+    Bayesian Logistic
+    """
+    pass
+
+
 class KNN(ModelNormalAbs):
     """
     kNN classifier
@@ -897,8 +964,20 @@ class BoostedTreeXGBoost(ModelNormalAbs):
 
 
 if __name__ == '__main__':
-    print('Package Model v. 0.1.0')
+    import mkl
+    import pygpu
+    import theano
+    print('PyMC3 v. {}'.format(pm.__version__))
+    print('Theano v. {}'.format(theano.__version__))
+    print('...floatX = {}'.format(theano.config.floatX))
+    print('...blas.ldflags = {}'.format(theano.config.blas.ldflags))
+    print('...blas.check_openmp = {}'.format(theano.config.blas.check_openmp))
+    print('pygpy v. {}'.format(pygpu.__version__))
+    print('MKL v. {}'.format(mkl.__version__))
 
-    # xgboost.XGBClassifier()
+    # theano.test()
 
-    skutilcheck.check_estimator(_LogisticLocalSklearn)
+    model = pm.Model(name='')
+    # self.model_.Var('beta', pm.Normal(mu=0, sd=self.featuresSd))
+    with model:
+        beta = pm.Normal(name='beta', mu=0, sd=4)
