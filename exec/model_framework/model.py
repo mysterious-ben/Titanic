@@ -646,7 +646,7 @@ class _LogisticBayesianSklearn(skbase.BaseEstimator, skbase.ClassifierMixin):
         skutilvalid.check_is_fitted(self, ['model_'])
         X = self._check_X_predict(X)
         self.X_shared_.set_value(X)
-        self.y_shared_.set_value(np.zeros(X.shape[0]))
+        self.y_shared_.set_value(np.zeros(X.shape[0], dtype=np.int))
         with self.model_:
             post_pred = pm.sample_ppc(self.trace_, samples=self.nsamplesPredict)['y_obs'].mean(axis=0)
 
@@ -964,20 +964,23 @@ class BoostedTreeXGBoost(ModelNormalAbs):
 
 
 if __name__ == '__main__':
-    import mkl
-    import pygpu
+    # import mkl
+    # import pygpu
+    import os
     import theano
+    import sklearn
+    print('Sklearn v. {}'.format(sklearn.__version__))
     print('PyMC3 v. {}'.format(pm.__version__))
     print('Theano v. {}'.format(theano.__version__))
     print('...floatX = {}'.format(theano.config.floatX))
     print('...blas.ldflags = {}'.format(theano.config.blas.ldflags))
     print('...blas.check_openmp = {}'.format(theano.config.blas.check_openmp))
-    print('pygpy v. {}'.format(pygpu.__version__))
-    print('MKL v. {}'.format(mkl.__version__))
-
+    # print('pygpy v. {}'.format(pygpu.__version__))
+    # print('MKL v. {}'.format(mkl.__version__))
     # theano.test()
-
+    print(os.getcwd())
     model = pm.Model(name='')
     # self.model_.Var('beta', pm.Normal(mu=0, sd=self.featuresSd))
     with model:
         beta = pm.Normal(name='beta', mu=0, sd=4)
+    print(model)
