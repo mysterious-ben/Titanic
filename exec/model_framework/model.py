@@ -6,6 +6,9 @@ from abc import ABC, abstractmethod
 from typing import Iterable, Dict, Callable, Tuple, Union
 import numbers
 
+import os;
+
+os.environ['THEANO_FLAGS'] = "floatX=float32"
 import matplotlib.image as img
 import matplotlib.pyplot as plt
 import numpy as np
@@ -126,22 +129,6 @@ class ModelAbs(ABC):
         self.ytH = None
         self.ytP = None
 
-    def score(self, methods: Iterable[str] = ('accuracy',)) -> (Dict[str, float], Dict[str, float], Dict[str, float]):
-        """
-        Score the classifier
-
-        Args:
-            methods: list of score method names
-
-        Returns:
-            In-sample, Cross-validated and Out-of-sample scores
-        """
-
-        scoreIS = self.scoreIS(methods=methods)
-        scoreOOS = self.scoreOOS(methods=methods)
-        scoreCV = self.scoreCV(methods=methods)
-        return scoreIS, scoreCV, scoreOOS
-
     def scoreIS(self, methods: Iterable[str] = ('accuracy',)) -> Dict[str, float]:
         """Score the classifier (in-sample)"""
         scores = {}
@@ -167,7 +154,7 @@ class ModelAbs(ABC):
         return scores
 
     @abstractmethod
-    def scoreCV(self, methods: Iterable[str] = ('accuracy',)) -> Dict[str, float]:
+    def scoreCV(self, methods: Iterable[str] = ('accuracy',), cv: Union[None, int] = 5) -> Dict[str, float]:
         """Score the classifier (cross-validation)"""
         pass
 
@@ -205,13 +192,15 @@ class ModelAbs(ABC):
         print(confOOSdf)
         print('')
 
-    def printPerformance(self):
+    def printPerformance(self, cv: Union[None, int] = 5):
         methods = ('accuracy', 'accproba', 'logproba', 'aucproba', 'recall', 'precision')
-        scoresIS, scoresCV, scoresOOS = self.score(methods)
+        scoreIS = self.scoreIS(methods)
+        scoreOOS = self.scoreOOS(methods)
+        scoreCV = self.scoreCV(methods, cv=cv) if cv is not None else {x: np.nan for x in methods}
         print('-----Performance-----')
         for method in methods:
-            print('{}\t (IS / CV / OOS): {:.2f} / {:.2f} / {:.2f}'.format(method, scoresIS[method],
-                                                                          scoresCV[method], scoresOOS[method]))
+            print('{}\t (IS / CV / OOS): {:.2f} / {:.2f} / {:.2f}'.format(method, scoreIS[method],
+                                                                          scoreCV[method], scoreOOS[method]))
         print('')
 
     @abstractmethod
@@ -300,14 +289,14 @@ class ModelNormalAbs(ModelAbs):
         self.ytH = self.model.predict(X=self.xt)
         self.ytP = self.model.predict_proba(X=self.xt)
 
-    def scoreCV(self, methods: Iterable[str] = ('accuracy',), random_state: int = 1) -> Dict[str, float]:
+    def scoreCV(self, methods: Iterable[str] = ('accuracy',), cv: int = 5, random_state: int = 1) -> Dict[str, float]:
         scoring = {}
         for method in methods:
             metrics, proba = Metrics.generator(method=method)
             cvScorer = skmtcs.make_scorer(metrics, needs_proba=proba)
             scoring.update({method: cvScorer})
 
-        kfold = skms.KFold(n_splits=5, random_state=random_state)
+        kfold = skms.KFold(n_splits=cv, random_state=random_state)
         scoresRaw = skms.cross_validate(estimator=self.model, X=self.x.values, y=self.y, cv=kfold,
                                         scoring=scoring, return_train_score=False)
         scores = {}
@@ -524,7 +513,7 @@ class LogisticGAM(ModelNormalAbs):
     def plotFeatureFit(self) -> None:
         """
         Partial dependence plot (?)
-        Todo: implement a generic Partial Dependence plot and compare
+        Todo: Generic Partial Dependence plot and compare
         """
         gridGAM = gamutils.generate_X_grid(self._getClassifier())
         # plt.rcParams['figure.figsize'] = (28, 8)
@@ -598,7 +587,7 @@ class _LogisticLinearLocalSklearn(skbase.BaseEstimator, skbase.ClassifierMixin):
 class LogisticLinearLocal(ModelNormalAbs):
     """
     Local Logistic classifier (Linear Proxy)
-    Todo: implement genuine Local Logistic with weights and add statistics
+    Todo: Genuine Local Logistic with weights and add statistics
     """
 
     def __init__(self, scale=True, reg_type: str = 'll', bw: Union[str, float, Iterable] = 'cv_ls'):
@@ -607,7 +596,7 @@ class LogisticLinearLocal(ModelNormalAbs):
         model = skpipe.Pipeline(steps=[('scaler', scaler), ('clf', classifier)])
         ModelNormalAbs.__init__(self, model=model, name='Logistic Local (Linear Proxy)')
 
-    def _getClassifier(self) -> skbase.ClassifierMixin:
+    def _getClassifier(self) -> _LogisticLinearLocalSklearn:
         return self.model.named_steps['clf']
 
     def printSummary(self):
@@ -622,24 +611,38 @@ class _LogisticBayesianSklearn(skbase.BaseEstimator, skbase.ClassifierMixin):
     Sklearn-compatible Bayesian Logistic classifier
     """
 
-    def __init__(self, featuresSd=10, nsamplesFit=200, nsamplesPredict=100):
+    def __init__(self, featuresSd=10, nsamplesFit=200, nsamplesPredict=100, mcmc=True,
+                 nsampleTune=200, discardTuned=True, samplerStep=None, samplerInit='auto'):
         self.featuresSd = featuresSd
         self.nsamplesFit = nsamplesFit
-        self.nsamplesPredict= nsamplesPredict
+        self.nsamplesPredict = nsamplesPredict
+        self.mcmc = mcmc
+        self.nsampleTune = nsampleTune
+        self.discardTuned = discardTuned
+        self.samplerStep = samplerStep
+        self.samplerInit = samplerInit
 
     def fit(self, X: Union[pd.DataFrame, np.ndarray], y: Union[pd.DataFrame, np.ndarray, Iterable]) \
             -> skbase.ClassifierMixin:
+        import copy
         X, y = self._check_X_y_fit(X, y)
         self.X_shared_ = shared(X)
         self.y_shared_ = shared(y)
         self.nfeatures_ = X.shape[1]
-        self.model_ = pm.Model(name='dd')
+        self.model_ = pm.Model(name='')
         # self.model_.Var('beta', pm.Normal(mu=0, sd=self.featuresSd))
         with self.model_:
-            beta = pm.Normal('beta', mu=0, sd=self.featuresSd, shape=self.nfeatures_)
-            mu = pm.Deterministic('mu', var=pmmath.dot(beta, self.X_shared_.T))
+            beta = pm.Normal('beta', mu=0, sd=self.featuresSd, testval=0, shape=self.nfeatures_)
+            # mu = pm.Deterministic('mu', var=pmmath.dot(beta, self.X_shared_.T))
+            mu = pmmath.dot(beta, self.X_shared_.T)
             y_obs = pm.Bernoulli('y_obs', p=pm.invlogit(mu), observed=self.y_shared_)
-            self.trace_ = pm.sample(draws=self.nsamplesFit)
+            if self.mcmc:
+                self.trace_ = pm.sample(draws=self.nsamplesFit, tune=self.nsampleTune,
+                                        discard_tuned_samples=self.discardTuned,
+                                        step=self.samplerStep, init=self.samplerInit, progressbar=True)
+            else:
+                approx = pm.fit(method='advi')
+                self.trace_ = approx.sample(draws=self.nsamplesFit)
         return self
 
     def decision_function(self, X) -> np.ndarray:
@@ -648,19 +651,21 @@ class _LogisticBayesianSklearn(skbase.BaseEstimator, skbase.ClassifierMixin):
         self.X_shared_.set_value(X)
         self.y_shared_.set_value(np.zeros(X.shape[0], dtype=np.int))
         with self.model_:
-            post_pred = pm.sample_ppc(self.trace_, samples=self.nsamplesPredict)['y_obs'].mean(axis=0)
+            post_pred = pm.sample_ppc(trace=self.trace_, samples=self.nsamplesPredict,
+                                      progressbar=False)['y_obs'].mean(axis=0)
+        return post_pred
 
     def predict(self, X) -> np.ndarray:
         skutilvalid.check_is_fitted(self, ['model_'])
         dsn_pred = self.decision_function(X)
-        y_pred = (dsn_pred > 0).astype(int)
+        y_pred = (dsn_pred > 0.5).astype(int)
         return y_pred
 
     def predict_proba(self, X) -> np.ndarray:
         skutilvalid.check_is_fitted(self, ['model_'])
         dsn_pred = self.decision_function(X)
         proba_pred = np.zeros((X.shape[0], 2), dtype=np.float)
-        proba_pred[:, 1] = 1 / (1 + np.exp(-dsn_pred))
+        proba_pred[:, 1] = dsn_pred
         proba_pred[:, 0] = 1 - proba_pred[:, 0]
         return proba_pred
 
@@ -678,8 +683,33 @@ class _LogisticBayesianSklearn(skbase.BaseEstimator, skbase.ClassifierMixin):
 class LogisticBayesian(ModelNormalAbs):
     """
     Bayesian Logistic
+    Todo: Plot feature names in Bayesian LR
     """
-    pass
+
+    def __init__(self, scale=True, featuresSd=10, nsamplesFit=200, nsamplesPredict=100, mcmc=True,
+                 nsampleTune=200, discardTuned=True, samplerStep=None, samplerInit='auto'):
+        scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
+        classifier = _LogisticBayesianSklearn(featuresSd=featuresSd, nsamplesFit=nsamplesFit,
+                                              nsamplesPredict=nsamplesPredict, mcmc=mcmc,
+                                              nsampleTune=nsampleTune, discardTuned=discardTuned,
+                                              samplerStep=samplerStep, samplerInit=samplerInit)
+        model = skpipe.Pipeline(steps=[('scaler', scaler), ('clf', classifier)])
+        ModelNormalAbs.__init__(self, model=model, name='Logistic Bayesian')
+
+    def _getClassifier(self) -> _LogisticBayesianSklearn:
+        return self.model.named_steps['clf']
+
+    def printSummary(self):
+        print('****** {} ******\n'.format(str.upper(self.name)))
+        self.printSetsInfo()
+        self.printPerformance(cv=5)
+        self.printConfusion()
+
+    def plotTrace(self):
+        pm.traceplot(self._getClassifier().trace_)
+
+    def plotPosterior(self):
+        pm.plot_posterior(self._getClassifier().trace_)
 
 
 class KNN(ModelNormalAbs):
@@ -706,7 +736,7 @@ class KNN(ModelNormalAbs):
 class KNNCV(KNN):
     """
     kNN classifier with CV for k
-    Todo: check that CV does not give an optimistic score when random states are chained
+    Todo: Check that CV does not give an optimistic score when random states are chained
     """
 
     def __init__(self, scale: bool = True, weights: str = 'uniform'):
@@ -767,7 +797,7 @@ class Tree(ModelNormalAbs):
         dotData = sktree.export_graphviz(self._getClassifier(), precision=2, proportion=True,
                                          feature_names=self._getFeatureNames(), class_names=['Dead', 'Alive'],
                                          impurity=True, filled=True, out_file=None)
-        imgPath = 'data\\temp\\tree.png'
+        imgPath = os.path.join('data', 'temp', 'tree.png')
         pydotplus.graph_from_dot_data(dotData).write_png(imgPath)
         image = img.imread(imgPath)
         fig, ax = plt.subplots()
@@ -921,7 +951,7 @@ class BoostedTreeXGBoost(ModelNormalAbs):
     """
     Boosted Trees (XGBoost)
     UNDER DEVELOPMENT
-    Todo: complete BoostedTreeXGBoost (fix import xgboost and add balanced weight scaling)
+    Todo: Complete BoostedTreeXGBoost (fix import xgboost and add balanced weight scaling)
     """
     pass
 
@@ -966,12 +996,13 @@ class BoostedTreeXGBoost(ModelNormalAbs):
 if __name__ == '__main__':
     # import mkl
     # import pygpu
-    import os
     import theano
     import sklearn
+
     print('Sklearn v. {}'.format(sklearn.__version__))
     print('PyMC3 v. {}'.format(pm.__version__))
     print('Theano v. {}'.format(theano.__version__))
+    print('...device = {}'.format(theano.config.device))
     print('...floatX = {}'.format(theano.config.floatX))
     print('...blas.ldflags = {}'.format(theano.config.blas.ldflags))
     print('...blas.check_openmp = {}'.format(theano.config.blas.check_openmp))
