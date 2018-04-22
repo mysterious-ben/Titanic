@@ -5,10 +5,12 @@ Classification model class
 from abc import ABC, abstractmethod
 from typing import Iterable, Dict, Callable, Tuple, Union
 import numbers
+import inspect
 
-import os;
+import os
 
 os.environ['THEANO_FLAGS'] = "floatX=float32"
+
 import matplotlib.image as img
 import matplotlib.pyplot as plt
 import numpy as np
@@ -26,6 +28,7 @@ from sklearn import neighbors as sknbr
 from sklearn import pipeline as skpipe
 from sklearn import preprocessing as skprcss
 from sklearn import tree as sktree
+from sklearn import svm as sksvm
 from sklearn.utils import estimator_checks as skutilcheck
 from sklearn.utils import validation as skutilvalid
 from statsmodels.nonparametric import kernel_regression as smkernel
@@ -993,8 +996,75 @@ class BoostedTreeXGBoost(ModelNormalAbs):
 #         self.printConfusion()
 
 
+class _SVMSklearn(sksvm.SVC):
+    """
+    Base Sklearn SVM classifer with a faster (but very approximate) predict_proba function
+    """
+    def predict_proba(self, X) -> np.ndarray:
+        dsn_pred = self.decision_function(X)
+        proba_pred = np.zeros((X.shape[0], 2), dtype=np.float)
+        proba_pred[:, 1] = 1 / (1 + np.exp(-dsn_pred))
+        proba_pred[:, 0] = 1 - proba_pred[:, 0]
+        return proba_pred
+
+
+class SVM(ModelNormalAbs):
+    """
+    SVM classifier
+    """
+
+    def __init__(self, scale: bool = True, C: float = 1., kernel: str = 'poly', degree: int = 2,
+                 gamma: Union[str, float] = 'auto',
+                 class_weight: Union[None, str] = 'balanced', random_state: Union[int, None] = 1):
+        scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
+        classifier = _SVMSklearn(C=C, kernel=kernel, degree=degree, gamma=gamma, class_weight=class_weight,
+                                 random_state=random_state, probability=False)
+        model = skpipe.Pipeline(steps=[('scaler', scaler), ('clf', classifier)])
+        ModelNormalAbs.__init__(self, model=model, name='SVM ({}):'.format(kernel))
+
+    def _getClassifier(self) -> sksvm.SVC:
+        return self.model.named_steps['clf']
+
+    def printSummary(self):
+        print('****** {} ******\n'.format(str.upper(self.name)))
+        self.printSetsInfo()
+        self.printPerformance()
+        self.printConfusion()
+
+
+class SVMCV(SVM):
+    """
+    SVM classifier with CV for C
+    Todo: Add other SVM parameters (gamma, degree) to the grid search
+    Todo: Add a CV-classifier generator
+    """
+
+    def __init__(self, scale: bool = True, kernel: str = 'poly', degree: int = 2, gamma: Union[str, float] = 'auto',
+                 class_weight: Union[None, str] = 'balanced', random_state: Union[int, None] = 1):
+        grid = {'clf__C': (0.01, 0.1, 1, 10, 100)}
+        SVM.__init__(self, scale=scale, C=grid['clf__C'][0], kernel=kernel, degree=degree, gamma=gamma,
+                     class_weight=class_weight, random_state=random_state)
+        self.model = skms.GridSearchCV(self.model, param_grid=grid, scoring='accuracy', cv=5)
+        self.name = 'SVM ({}):'.format(kernel)
+
+    def _getClassifier(self) -> sksvm.SVC:
+        return self.model.best_estimator_.named_steps['clf']
+
+    def printBestC(self) -> None:
+        print('-----Best C-----')
+        print('C = {:.2f} with the score = {:.2f}'.format(self.model.best_params_['clf__C'], self.model.best_score_))
+        print('')
+
+    def printSummary(self):
+        print('****** {} ******\n'.format(str.upper(self.name)))
+        self.printSetsInfo()
+        self.printBestC()
+        self.printPerformance()
+        self.printConfusion()
+
+
 if __name__ == '__main__':
-    # import mkl
+    import mkl
     # import pygpu
     import theano
     import sklearn
