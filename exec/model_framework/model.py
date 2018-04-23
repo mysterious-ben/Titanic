@@ -3,10 +3,10 @@ Classification model class
 """
 
 from abc import ABC, abstractmethod
-from typing import Iterable, Dict, Callable, Tuple, Union
+from typing import Iterable, Dict, Callable, Tuple, Union, Any, Type
 import numbers
 import inspect
-
+import functools
 import os
 
 os.environ['THEANO_FLAGS'] = "floatX=float32"
@@ -318,7 +318,51 @@ class ModelNormalAbs(ModelAbs):
     @abstractmethod
     def _getClassifier(self) -> skbase.ClassifierMixin:
         """Return Sklearn base classifier"""
-        pass
+        return self.model.named_steps['clf']
+
+    def _getScaler(self) -> skprcss.StandardScaler:
+        """Return Sklearn data scaler"""
+        return self.model.named_steps['scaler']
+
+
+def genModelCV(ModelClass: Type[ModelNormalAbs], grid: Dict[str, Any]):
+    """
+    Generate a classifier with some of the parameters selected by CV
+    Todo: Imply doctring for ModelCV from ModelClass
+
+    Args:
+        ModelClass: Classification model
+        grid: Dictionary {parameter: value grid for CV}
+
+    Returns:
+        CV Classification model
+    """
+    class ModelCV(ModelClass):
+        # noinspection PyMissingConstructor
+        def __init__(self, cv: int, *args, **kwargs):
+            self.grid = {'clf__' + x: grid[x] for x in grid}
+            ModelClass.__init__(self, *args, **kwargs)
+            self.model = skms.GridSearchCV(self.model, param_grid=self.grid, scoring='accuracy', cv=cv)
+            self.name += ' CV'
+
+        def _getClassifier(self):
+            return self.model.best_estimator_.named_steps['clf']
+
+        def _getScaler(self) -> skprcss.StandardScaler:
+            return self.model.best_estimator_.named_steps['scaler']
+
+        def printBestParamCV(self) -> None:
+            print('-----Best CV Parameters-----')
+            for param in self.grid:
+                print('{} = {:.2f}'.format(param[5:], self.model.best_params_[param]))
+            print('...with the score = {:.2f}'.format(self.model.best_score_))
+            print('')
+
+        def printCoefficientsInfo(self):
+            ModelClass.printCoefficientsInfo(self)
+            self.printBestParamCV()
+
+    return ModelCV
 
 
 class LogisticAbs(ModelNormalAbs):
@@ -556,10 +600,12 @@ class KNN(ModelNormalAbs):
 class KNNCV(KNN):
     """
     kNN classifier with CV for k
+    *DEPRECIATED*  Use genModelCV instead
     Todo: Check that CV does not give an optimistic score when random states are chained
     """
 
     def __init__(self, cv=5, scale: bool = True, weights: str = 'uniform'):
+        print('*DEPRECIATED*  Use genModelCV instead ')
         self.grid = {'clf__n_neighbors': (5, 10, 20, 40)}
         KNN.__init__(self, scale=scale, n_neighbors=self.grid['clf__n_neighbors'][0], weights=weights)
         self.model = skms.GridSearchCV(self.model, param_grid=self.grid, scoring='accuracy', cv=cv)
@@ -625,10 +671,12 @@ class Tree(ModelNormalAbs):
 class TreeCV(Tree):
     """
     Decision Tree classifier with CV for max depth and max number of leaves
+    *DEPRECIATED*  Use genModelCV instead
     """
 
     def __init__(self, cv=5, scale: bool = True, class_weight: Union[None, str] = 'balanced',
                  random_state: Union[int, None] = 1):
+        print('*DEPRECIATED*  Use genModelCV instead')
         self.grid = {'clf__max_depth': (2, 3, 4), 'clf__max_leaf_nodes': (4, 6, 8, 12)}
         Tree.__init__(self, scale=scale, max_depth=self.grid['clf__max_depth'][0],
                       class_weight=class_weight, random_state=random_state)
@@ -734,7 +782,7 @@ class BoostedTree(ModelNormalAbs):
     def plotPartialDependence(self, features=None) -> None:
         """Partial Dependence Plot"""
         if features is None: features = self._getFeatureNames()
-        xScaled = self.model.named_steps['scaler'].transform(self.x)
+        xScaled = self._getScaler().transform(self.x)
         fig, axs = skens.partial_dependence.plot_partial_dependence(self._getClassifier(), X=xScaled, features=features,
                                                                     feature_names=self._getFeatureNames(),
                                                                     percentiles=(0.05, 0.95), grid_resolution=100)
@@ -821,17 +869,17 @@ class SVM(ModelNormalAbs):
 class SVMCV(SVM):
     """
     SVM classifier with CV for C
-    Todo: Add other SVM parameters (gamma, degree) to the grid search
-    Todo: Add a CV-classifier generator
+    *DEPRECIATED*  Use genModelCV instead
     """
 
     def __init__(self, cv=5, scale: bool = True, kernel: str = 'poly', degree: int = 2,
                  class_weight: Union[None, str] = 'balanced', random_state: Union[int, None] = 1):
+        print('*DEPRECIATED*  Use genModelCV instead')
         self.grid = {'clf__C': np.exp2(np.arange(-4, 5, 2)), 'clf__gamma': np.exp2(np.arange(-5, -1, 1))}
         SVM.__init__(self, scale=scale, C=self.grid['clf__C'][0], kernel=kernel, degree=degree,
                      gamma=self.grid['clf__gamma'][0], class_weight=class_weight, random_state=random_state)
         self.model = skms.GridSearchCV(self.model, param_grid=self.grid, scoring='accuracy', cv=cv)
-        self.name = 'SVM ({}):'.format(kernel)
+        self.name = 'SVM CV ({}):'.format(kernel)
 
     def _getClassifier(self) -> sksvm.SVC:
         return self.model.best_estimator_.named_steps['clf']
