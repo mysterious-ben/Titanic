@@ -29,16 +29,11 @@ from sklearn import pipeline as skpipe
 from sklearn import preprocessing as skprcss
 from sklearn import tree as sktree
 from sklearn import svm as sksvm
-from sklearn.utils import estimator_checks as skutilcheck
-from sklearn.utils import validation as skutilvalid
-from statsmodels.nonparametric import kernel_regression as smkernel
-from statsmodels.nonparametric import _kernel_base as smkernelbase
-from theano import shared
 import pymc3 as pm
-from pymc3 import math as pmmath
 # import xgboost
 
 import exec.model_framework.utilmodel as utmdl
+import exec.model_framework.sklearn_model as skmdl
 
 
 class Metrics(ABC):
@@ -173,7 +168,7 @@ class ModelAbs(ABC):
         return confIS, confOOS
 
     def printSetsInfo(self) -> None:
-        """Print a summary on the training and testing data sets"""
+        """Print information on the training and testing data sets"""
         sampleSize = len(self.y)
         sampleSizeT = len(self.yt) if (self.yt is not None) else None
         posRate = np.sum(self.y) / len(self.y)
@@ -196,6 +191,7 @@ class ModelAbs(ABC):
         print('')
 
     def printPerformance(self, cv: Union[None, int] = 5):
+        """Print information on classifier performance (IS / CV / OOS)"""
         methods = ('accuracy', 'accproba', 'logproba', 'aucproba', 'recall', 'precision')
         scoreIS = self.scoreIS(methods)
         scoreOOS = self.scoreOOS(methods)
@@ -206,10 +202,17 @@ class ModelAbs(ABC):
                                                                           scoreCV[method], scoreOOS[method]))
         print('')
 
-    @abstractmethod
-    def printSummary(self) -> None:
-        """Print a summary on the classifier"""
+    def printCoefficientsInfo(self):
+        """Print information on classifier coefficients"""
         pass
+
+    def printSummary(self, cv: Union[None, int] = 5) -> None:
+        """Print a summary on the classifier"""
+        print('****** {} ******\n'.format(str.upper(self.name)))
+        self.printSetsInfo()
+        self.printPerformance(cv=cv)
+        self.printConfusion()
+        self.printCoefficientsInfo()
 
     def plotROC(self) -> None:
         """Plot the ROC curve"""
@@ -218,6 +221,11 @@ class ModelAbs(ABC):
         self.staticPlotROC(self.yt, self.ytP[:, 1], ax=ax, label='OOS', title='ROC: {}'.format(self.name))
         fig.set_tight_layout(True)
         fig.show()
+
+    def printPlotSummary(self, cv: Union[None, int] = 5) -> None:
+        """Print a summary and show selected plots"""
+        self.printSummary(cv=cv)
+        self.plotROC()
 
     @staticmethod
     def staticPlotROC(y: pd.DataFrame, yP: pd.DataFrame, ax=None, label: str = ' ', title: str = 'ROC') -> None:
@@ -292,7 +300,7 @@ class ModelNormalAbs(ModelAbs):
         self.ytH = self.model.predict(X=self.xt)
         self.ytP = self.model.predict_proba(X=self.xt)
 
-    def scoreCV(self, methods: Iterable[str] = ('accuracy',), cv: int = 5, random_state: int = 1) -> Dict[str, float]:
+    def scoreCV(self, methods: Iterable[str] = ('accuracy',), cv: int = 20, random_state: int = 1) -> Dict[str, float]:
         scoring = {}
         for method in methods:
             metrics, proba = Metrics.generator(method=method)
@@ -325,7 +333,7 @@ class LogisticAbs(ModelNormalAbs):
     def _getClassifier(self) -> sklm.LogisticRegression:
         pass
 
-    def printCoefficients(self) -> None:
+    def printCoefficientsInfo(self) -> None:
         """Print the fitted coefficients"""
         coef = self._getClassifier().coef_[0]
         assert len(coef) == len(self._getFeatureNames())
@@ -346,15 +354,8 @@ class Logistic(LogisticAbs):
         model = skpipe.Pipeline(steps=[('scaler', scaler), ('clf', classifier)])
         LogisticAbs.__init__(self, model=model, name='Logistic')
 
-    def _getClassifier(self):
+    def _getClassifier(self) -> sklm.LogisticRegression:
         return self.model.named_steps['clf']
-
-    def printSummary(self):
-        print('****** {} ******\n'.format(str.upper(self.name)))
-        self.printSetsInfo()
-        self.printCoefficients()
-        self.printPerformance()
-        self.printConfusion()
 
 
 class LogisticRidgeCV(LogisticAbs):
@@ -371,21 +372,14 @@ class LogisticRidgeCV(LogisticAbs):
         model = skpipe.Pipeline(steps=[('scaler', scaler), ('clf', classifier)])
         LogisticAbs.__init__(self, model=model, name='Logistic Ridge')
 
-    def _getClassifier(self):
+    def _getClassifier(self) -> sklm.LogisticRegressionCV:
         return self.model.named_steps['clf']
 
-    def printRidgeMultiplier(self) -> None:
+    def printCoefficientsInfo(self) -> None:
+        LogisticAbs.printCoefficientsInfo(self)
         print('-----Ridge CV multiplier-----')
         print('Ridge Multiplier = {:.2f}'.format(self.model.named_steps['clf'].C_[0]))
         print('')
-
-    def printSummary(self):
-        print('****** {} ******\n'.format(str.upper(self.name)))
-        self.printSetsInfo()
-        self.printCoefficients()
-        self.printRidgeMultiplier()
-        self.printPerformance()
-        self.printConfusion()
 
 
 class LogisticBestSubset(LogisticAbs):
@@ -400,10 +394,10 @@ class LogisticBestSubset(LogisticAbs):
         model = skpipe.Pipeline(steps=[('scaler', scaler), ('fselect', featureSelector), ('clf', classifier)])
         LogisticAbs.__init__(self, model=model, name='Logistic kBest')
 
-    def _getClassifier(self):
+    def _getClassifier(self) -> sklm.LogisticRegression:
         return self.model.named_steps['clf']
 
-    def printCoefficients(self):
+    def printCoefficientsInfo(self):
         coef = self._getClassifier().coef_[0]
         support = self.model.named_steps['fselect'].get_support()
         assert len(coef) == len(self._getFeatureNames()[support])
@@ -411,42 +405,6 @@ class LogisticBestSubset(LogisticAbs):
         print('-----Coefficients-----')
         print(coefSrs)
         print('')
-
-    def printSummary(self):
-        print('****** {} ******\n'.format(str.upper(self.name)))
-        self.printSetsInfo()
-        self.printCoefficients()
-        self.printPerformance()
-        self.printConfusion()
-
-
-class _LogisticGAMSklearn(gam.LogisticGAM):
-    """
-    Sklearn-compatible Additive Logistic base classifier
-    """
-
-    def __init__(self, lam=0.6, max_iter=100, n_splines=25, spline_order=3,
-                 penalties='auto', dtype='auto', tol=1e-4,
-                 callbacks=('deviance', 'diffs', 'accuracy'),
-                 fit_intercept=True, fit_linear=False, fit_splines=True,
-                 constraints=None):
-        gam.LogisticGAM.__init__(self, lam=lam, max_iter=max_iter, n_splines=n_splines, spline_order=spline_order,
-                                 penalties=penalties, dtype=dtype, tol=tol,
-                                 callbacks=callbacks,
-                                 fit_intercept=fit_intercept, fit_linear=fit_linear, fit_splines=fit_splines,
-                                 constraints=constraints)
-
-    def get_params(self, deep=False):
-        params = gam.LogisticGAM.get_params(self, deep=deep)
-        del params['verbose']
-        return params
-
-    def predict_proba(self, X):
-        proba = gam.LogisticGAM.predict_proba(self, X)
-        skProba = np.zeros((len(proba), 2), dtype=float)
-        skProba[:, 1] = proba
-        skProba[:, 0] = 1 - proba
-        return skProba
 
 
 class LogisticGAM(ModelNormalAbs):
@@ -456,15 +414,15 @@ class LogisticGAM(ModelNormalAbs):
 
     def __init__(self, scale=True, fit_intercept=False, n_splines=15, lam=1., constraints=None):
         scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
-        classifier = _LogisticGAMSklearn(fit_intercept=fit_intercept, n_splines=n_splines, lam=lam,
-                                         constraints=constraints)
+        classifier = skmdl._LogisticGAM(fit_intercept=fit_intercept, n_splines=n_splines, lam=lam,
+                                        constraints=constraints)
         model = skpipe.Pipeline(steps=[('scaler', scaler), ('clf', classifier)])
         ModelNormalAbs.__init__(self, model=model, name='Logistic GAM')
 
     def _getClassifier(self) -> gam.LogisticGAM:
         return self.model.named_steps['clf']
 
-    def printStatistics(self):
+    def printCoefficientsInfo(self):
         print('-----Statistics-----')
         data = []
         for i in np.arange(len(self._getClassifier()._n_splines)):
@@ -506,13 +464,6 @@ class LogisticGAM(ModelNormalAbs):
         print("Significance codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1")
         print()
 
-    def printSummary(self):
-        print('****** {} ******\n'.format(str.upper(self.name)))
-        self.printSetsInfo()
-        self.printStatistics()
-        self.printPerformance()
-        self.printConfusion()
-
     def plotFeatureFit(self) -> None:
         """
         Partial dependence plot (?)
@@ -531,60 +482,9 @@ class LogisticGAM(ModelNormalAbs):
         fig.set_tight_layout(True)
         fig.show()
 
-
-class _LogisticLinearLocalSklearn(skbase.BaseEstimator, skbase.ClassifierMixin):
-    """
-    Sklearn-compatible Local Logistic classifier (using Local Linear as a proxy)
-    """
-
-    def __init__(self, reg_type: str = 'll', bw: Union[str, float, Iterable] = 'cv_ls'):
-        self.reg_type = reg_type
-        self.bw = bw
-
-    def fit(self, X: Union[pd.DataFrame, np.ndarray], y: Union[pd.DataFrame, np.ndarray, Iterable]) \
-            -> skbase.ClassifierMixin:
-        X, y = self._check_X_y_fit(X, y)
-        # self.classes_ = skutilmult.unique_labels(y)
-        self.nfeatures_ = X.shape[1]
-        bw = np.full(self.nfeatures_, self.bw) if isinstance(self.bw, numbers.Number) else self.bw
-
-        self.model_ = smkernel.KernelReg(endog=y * 2 - 1, exog=X, var_type='c' * self.nfeatures_,
-                                         reg_type=self.reg_type, bw=bw,
-                                         defaults=smkernelbase.EstimatorSettings(efficient=False))
-        return self
-
-    def decision_function(self, X) -> np.ndarray:
-        skutilvalid.check_is_fitted(self, ['model_'])
-        X = self._check_X_predict(X)
-        dsn_pred, mgn_pred = self.model_.fit(data_predict=X)
-        return dsn_pred
-
-    def predict(self, X) -> np.ndarray:
-        skutilvalid.check_is_fitted(self, ['model_'])
-        dsn_pred = self.decision_function(X)
-        y_pred = (dsn_pred > 0).astype(int)
-        return y_pred
-
-    def predict_proba(self, X) -> np.ndarray:
-        skutilvalid.check_is_fitted(self, ['model_'])
-        dsn_pred = self.decision_function(X)
-        proba_pred = np.zeros((X.shape[0], 2), dtype=np.float)
-        proba_pred[:, 1] = 1 / (1 + np.exp(-dsn_pred))
-        proba_pred[:, 0] = 1 - proba_pred[:, 0]
-        return proba_pred
-
-    def _check_X_y_fit(self, X, y):
-        X, y = skutilvalid.check_X_y(X, y)
-        assert np.all(np.unique(y) == np.array([0, 1]))
-        return X, y
-
-    def _check_X_predict(self, X):
-        X = skutilvalid.check_array(X)
-        assert X.shape[1] == self.nfeatures_, "Wrong X shape"
-        return X
-
-    # def score(self, X, y, sample_weight=None):
-    #     pass
+    def printPlotSummary(self, cv: Union[None, int] = 5):
+        ModelNormalAbs.printPlotSummary(self, cv=cv)
+        self.plotFeatureFit()
 
 
 class LogisticLinearLocal(ModelNormalAbs):
@@ -595,92 +495,12 @@ class LogisticLinearLocal(ModelNormalAbs):
 
     def __init__(self, scale=True, reg_type: str = 'll', bw: Union[str, float, Iterable] = 'cv_ls'):
         scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
-        classifier = _LogisticLinearLocalSklearn(reg_type=reg_type, bw=bw)
+        classifier = skmdl._LogisticLinearLocal(reg_type=reg_type, bw=bw)
         model = skpipe.Pipeline(steps=[('scaler', scaler), ('clf', classifier)])
         ModelNormalAbs.__init__(self, model=model, name='Logistic Local (Linear Proxy)')
 
-    def _getClassifier(self) -> _LogisticLinearLocalSklearn:
+    def _getClassifier(self) -> skmdl._LogisticLinearLocal:
         return self.model.named_steps['clf']
-
-    def printSummary(self):
-        print('****** {} ******\n'.format(str.upper(self.name)))
-        self.printSetsInfo()
-        self.printPerformance()
-        self.printConfusion()
-
-
-class _LogisticBayesianSklearn(skbase.BaseEstimator, skbase.ClassifierMixin):
-    """
-    Sklearn-compatible Bayesian Logistic classifier
-    """
-
-    def __init__(self, featuresSd=10, nsamplesFit=200, nsamplesPredict=100, mcmc=True,
-                 nsampleTune=200, discardTuned=True, samplerStep=None, samplerInit='auto'):
-        self.featuresSd = featuresSd
-        self.nsamplesFit = nsamplesFit
-        self.nsamplesPredict = nsamplesPredict
-        self.mcmc = mcmc
-        self.nsampleTune = nsampleTune
-        self.discardTuned = discardTuned
-        self.samplerStep = samplerStep
-        self.samplerInit = samplerInit
-
-    def fit(self, X: Union[pd.DataFrame, np.ndarray], y: Union[pd.DataFrame, np.ndarray, Iterable]) \
-            -> skbase.ClassifierMixin:
-        import copy
-        X, y = self._check_X_y_fit(X, y)
-        self.X_shared_ = shared(X)
-        self.y_shared_ = shared(y)
-        self.nfeatures_ = X.shape[1]
-        self.model_ = pm.Model(name='')
-        # self.model_.Var('beta', pm.Normal(mu=0, sd=self.featuresSd))
-        with self.model_:
-            beta = pm.Normal('beta', mu=0, sd=self.featuresSd, testval=0, shape=self.nfeatures_)
-            # mu = pm.Deterministic('mu', var=pmmath.dot(beta, self.X_shared_.T))
-            mu = pmmath.dot(beta, self.X_shared_.T)
-            y_obs = pm.Bernoulli('y_obs', p=pm.invlogit(mu), observed=self.y_shared_)
-            if self.mcmc:
-                self.trace_ = pm.sample(draws=self.nsamplesFit, tune=self.nsampleTune,
-                                        discard_tuned_samples=self.discardTuned,
-                                        step=self.samplerStep, init=self.samplerInit, progressbar=True)
-            else:
-                approx = pm.fit(method='advi')
-                self.trace_ = approx.sample(draws=self.nsamplesFit)
-        return self
-
-    def decision_function(self, X) -> np.ndarray:
-        skutilvalid.check_is_fitted(self, ['model_'])
-        X = self._check_X_predict(X)
-        self.X_shared_.set_value(X)
-        self.y_shared_.set_value(np.zeros(X.shape[0], dtype=np.int))
-        with self.model_:
-            post_pred = pm.sample_ppc(trace=self.trace_, samples=self.nsamplesPredict,
-                                      progressbar=False)['y_obs'].mean(axis=0)
-        return post_pred
-
-    def predict(self, X) -> np.ndarray:
-        skutilvalid.check_is_fitted(self, ['model_'])
-        dsn_pred = self.decision_function(X)
-        y_pred = (dsn_pred > 0.5).astype(int)
-        return y_pred
-
-    def predict_proba(self, X) -> np.ndarray:
-        skutilvalid.check_is_fitted(self, ['model_'])
-        dsn_pred = self.decision_function(X)
-        proba_pred = np.zeros((X.shape[0], 2), dtype=np.float)
-        proba_pred[:, 1] = dsn_pred
-        proba_pred[:, 0] = 1 - proba_pred[:, 0]
-        return proba_pred
-
-    def _check_X_y_fit(self, X, y):
-        X, y = skutilvalid.check_X_y(X, y)
-        assert np.all(np.unique(y) == np.array([0, 1]))
-        return X, y
-
-    def _check_X_predict(self, X):
-        X = skutilvalid.check_array(X)
-        assert X.shape[1] == self.nfeatures_, "Wrong X shape"
-        return X
 
 
 class LogisticBayesian(ModelNormalAbs):
@@ -692,27 +512,30 @@ class LogisticBayesian(ModelNormalAbs):
     def __init__(self, scale=True, featuresSd=10, nsamplesFit=200, nsamplesPredict=100, mcmc=True,
                  nsampleTune=200, discardTuned=True, samplerStep=None, samplerInit='auto'):
         scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
-        classifier = _LogisticBayesianSklearn(featuresSd=featuresSd, nsamplesFit=nsamplesFit,
-                                              nsamplesPredict=nsamplesPredict, mcmc=mcmc,
-                                              nsampleTune=nsampleTune, discardTuned=discardTuned,
-                                              samplerStep=samplerStep, samplerInit=samplerInit)
+        classifier = skmdl._LogisticBayesian(featuresSd=featuresSd, nsamplesFit=nsamplesFit,
+                                             nsamplesPredict=nsamplesPredict, mcmc=mcmc,
+                                             nsampleTune=nsampleTune, discardTuned=discardTuned,
+                                             samplerStep=samplerStep, samplerInit=samplerInit)
         model = skpipe.Pipeline(steps=[('scaler', scaler), ('clf', classifier)])
         ModelNormalAbs.__init__(self, model=model, name='Logistic Bayesian')
 
-    def _getClassifier(self) -> _LogisticBayesianSklearn:
+    def _getClassifier(self) -> skmdl._LogisticBayesian:
         return self.model.named_steps['clf']
 
-    def printSummary(self):
-        print('****** {} ******\n'.format(str.upper(self.name)))
-        self.printSetsInfo()
-        self.printPerformance(cv=5)
-        self.printConfusion()
+    def printCoefficientsInfo(self):
+        print('-----Coefficients-----')
+        pm.summary(self._getClassifier().trace_)
+        print('')
 
     def plotTrace(self):
-        pm.traceplot(self._getClassifier().trace_)
+        pm.traceplot(self._getClassifier().trace_, varnames=self._getFeatureNames())
 
     def plotPosterior(self):
         pm.plot_posterior(self._getClassifier().trace_)
+
+    def printPlotSummary(self, cv: Union[None, int] = 5):
+        ModelNormalAbs.printPlotSummary(self, cv=cv)
+        self.plotPosterior()
 
 
 class KNN(ModelNormalAbs):
@@ -729,12 +552,6 @@ class KNN(ModelNormalAbs):
     def _getClassifier(self) -> sknbr.KNeighborsClassifier:
         return self.model.named_steps['clf']
 
-    def printSummary(self):
-        print('****** {} ******\n'.format(str.upper(self.name)))
-        self.printSetsInfo()
-        self.printPerformance()
-        self.printConfusion()
-
 
 class KNNCV(KNN):
     """
@@ -742,27 +559,25 @@ class KNNCV(KNN):
     Todo: Check that CV does not give an optimistic score when random states are chained
     """
 
-    def __init__(self, scale: bool = True, weights: str = 'uniform'):
-        grid = {'clf__n_neighbors': (5, 10, 20, 40)}
-        KNN.__init__(self, scale=scale, n_neighbors=grid['clf__n_neighbors'][0], weights=weights)
-        self.model = skms.GridSearchCV(self.model, param_grid=grid, scoring='accuracy', cv=5)
+    def __init__(self, cv=5, scale: bool = True, weights: str = 'uniform'):
+        self.grid = {'clf__n_neighbors': (5, 10, 20, 40)}
+        KNN.__init__(self, scale=scale, n_neighbors=self.grid['clf__n_neighbors'][0], weights=weights)
+        self.model = skms.GridSearchCV(self.model, param_grid=self.grid, scoring='accuracy', cv=cv)
         self.name = 'kNN CV'
 
-    def _getClassifier(self):
+    def _getClassifier(self) -> sknbr.KNeighborsClassifier:
         return self.model.best_estimator_.named_steps['clf']
 
-    def printBestK(self) -> None:
-        print('-----Best k-----')
-        print('k = {:d} with the score = {:.2f}'.format(self.model.best_params_['clf__n_neighbors'],
-                                                        self.model.best_score_))
+    def printBestParamCV(self) -> None:
+        print('-----Best CV Parameters-----')
+        for param in self.grid:
+            print('{} = {:.2f}'.format(param[5:], self.model.best_params_[param]))
+        print('...with the score = {:.2f}'.format(self.model.best_score_))
         print('')
 
-    def printSummary(self):
-        print('****** {} ******\n'.format(str.upper(self.name)))
-        self.printSetsInfo()
-        self.printBestK()
-        self.printPerformance()
-        self.printConfusion()
+    def printCoefficientsInfo(self):
+        KNN.printCoefficientsInfo(self)
+        self.printBestParamCV()
 
 
 class Tree(ModelNormalAbs):
@@ -782,19 +597,12 @@ class Tree(ModelNormalAbs):
     def _getClassifier(self) -> sktree.DecisionTreeClassifier:
         return self.model.named_steps['clf']
 
-    def printFeatureImportance(self):
+    def printCoefficientsInfo(self):
         print('-----Feature Importance-----')
         importance = self._getClassifier().feature_importances_
         importanceSrs = pd.Series(importance, index=self.x.columns)
         print(importanceSrs)
         print('')
-
-    def printSummary(self):
-        print('****** {} ******\n'.format(str.upper(self.name)))
-        self.printSetsInfo()
-        self.printFeatureImportance()
-        self.printPerformance()
-        self.printConfusion()
 
     def visualizeTree(self) -> None:
         dotData = sktree.export_graphviz(self._getClassifier(), precision=2, proportion=True,
@@ -809,37 +617,37 @@ class Tree(ModelNormalAbs):
         fig.set_tight_layout(True)
         fig.show()
 
+    def printPlotSummary(self, cv: Union[None, int] = 5):
+        ModelNormalAbs.printPlotSummary(self, cv=cv)
+        self.visualizeTree()
+
 
 class TreeCV(Tree):
     """
     Decision Tree classifier with CV for max depth and max number of leaves
     """
 
-    def __init__(self, scale: bool = True, class_weight: Union[None, str] = 'balanced',
+    def __init__(self, cv=5, scale: bool = True, class_weight: Union[None, str] = 'balanced',
                  random_state: Union[int, None] = 1):
-        grid = {'clf__max_depth': (2, 3, 4), 'clf__max_leaf_nodes': (4, 6, 8, 12)}
-        Tree.__init__(self, scale=scale, max_depth=grid['clf__max_depth'][0],
+        self.grid = {'clf__max_depth': (2, 3, 4), 'clf__max_leaf_nodes': (4, 6, 8, 12)}
+        Tree.__init__(self, scale=scale, max_depth=self.grid['clf__max_depth'][0],
                       class_weight=class_weight, random_state=random_state)
-        self.model = skms.GridSearchCV(self.model, param_grid=grid, scoring='accuracy', cv=5)
+        self.model = skms.GridSearchCV(self.model, param_grid=self.grid, scoring='accuracy', cv=cv)
         self.name = 'Tree CV'
 
-    def printParameters(self):
-        print('-----Best Parameters-----')
-        print('max_depth = {:d} and max_leaf_nodes = {:d} with the score = {:.2f}'.
-              format(self.model.best_params_['clf__max_depth'] + 1, self.model.best_params_['clf__max_leaf_nodes'],
-                     self.model.best_score_))
-        print('')
-
-    def _getClassifier(self):
+    def _getClassifier(self) -> sktree.DecisionTreeClassifier:
         return self.model.best_estimator_.named_steps['clf']
 
-    def printSummary(self):
-        print('****** {} ******\n'.format(str.upper(self.name)))
-        self.printSetsInfo()
-        self.printParameters()
-        self.printFeatureImportance()
-        self.printPerformance()
-        self.printConfusion()
+    def printBestParamCV(self) -> None:
+        print('-----Best CV Parameters-----')
+        for param in self.grid:
+            print('{} = {:.2f}'.format(param[5:], self.model.best_params_[param]))
+        print('...with the score = {:.2f}'.format(self.model.best_score_))
+        print('')
+
+    def printCoefficientsInfo(self):
+        Tree.printCoefficientsInfo(self)
+        self.printBestParamCV()
 
 
 class RandomForest(ModelNormalAbs):
@@ -862,19 +670,12 @@ class RandomForest(ModelNormalAbs):
     def _getClassifier(self) -> skens.RandomForestClassifier:
         return self.model.named_steps['clf']
 
-    def printFeatureImportance(self):
+    def printCoefficientsInfo(self):
         print('-----Feature Importance-----')
         importance = self._getClassifier().feature_importances_
-        importanceSrs = pd.Series(importance, index=self._getFeatureNames())
+        importanceSrs = pd.Series(importance, index=self.x.columns)
         print(importanceSrs)
         print('')
-
-    def printSummary(self):
-        print('****** {} ******\n'.format(str.upper(self.name)))
-        self.printSetsInfo()
-        self.printFeatureImportance()
-        self.printPerformance()
-        self.printConfusion()
 
 
 class BoostedTree(ModelNormalAbs):
@@ -923,19 +724,12 @@ class BoostedTree(ModelNormalAbs):
     def _getClassifier(self) -> skens.GradientBoostingClassifier:
         return self.model.named_steps['clf']
 
-    def printFeatureImportance(self):
+    def printCoefficientsInfo(self):
         print('-----Feature Importance-----')
         importance = self._getClassifier().feature_importances_
-        importanceSrs = pd.Series(importance, index=self._getFeatureNames())
+        importanceSrs = pd.Series(importance, index=self.x.columns)
         print(importanceSrs)
         print('')
-
-    def printSummary(self):
-        print('****** {} ******\n'.format(str.upper(self.name)))
-        self.printSetsInfo()
-        self.printFeatureImportance()
-        self.printPerformance()
-        self.printConfusion()
 
     def plotPartialDependence(self, features=None) -> None:
         """Partial Dependence Plot"""
@@ -948,6 +742,10 @@ class BoostedTree(ModelNormalAbs):
         # fig.subplots_adjust(top=0.9)
         fig.set_tight_layout(True)
         fig.show()
+
+    def printPlotSummary(self, cv: Union[None, int] = 5):
+        ModelNormalAbs.printPlotSummary(self, cv=cv)
+        self.plotPartialDependence()
 
 
 class BoostedTreeXGBoost(ModelNormalAbs):
@@ -981,31 +779,25 @@ class BoostedTreeXGBoost(ModelNormalAbs):
 #     def _getClassifier(self) -> xgboost.XGBClassifier:
 #         return self.model.named_steps['clf']
 #
-#     def printFeatureImportance(self):
-#         print('-----Feature Importance-----')
-#         importance = self._getClassifier().feature_importances_
-#         importanceSrs = pd.Series(importance, index=self._getFeatureNames())
-#         print(importanceSrs)
-#         print('')
+# def printCoefficientsInfo(self):
+#     print('-----Feature Importance-----')
+#     importance = self._getClassifier().feature_importances_
+#     importanceSrs = pd.Series(importance, index=self.x.columns)
+#     print(importanceSrs)
+#     print('')
 #
-#     def printSummary(self):
-#         print('****** {} ******\n'.format(str.upper(self.name)))
-#         self.printSetsInfo()
-#         self.printFeatureImportance()
-#         self.printPerformance()
-#         self.printConfusion()
-
-
-class _SVMSklearn(sksvm.SVC):
-    """
-    Base Sklearn SVM classifer with a faster (but very approximate) predict_proba function
-    """
-    def predict_proba(self, X) -> np.ndarray:
-        dsn_pred = self.decision_function(X)
-        proba_pred = np.zeros((X.shape[0], 2), dtype=np.float)
-        proba_pred[:, 1] = 1 / (1 + np.exp(-dsn_pred))
-        proba_pred[:, 0] = 1 - proba_pred[:, 0]
-        return proba_pred
+#
+# def plotPartialDependence(self, features=None) -> None:
+#     """Partial Dependence Plot"""
+#     if features is None: features = self._getFeatureNames()
+#     xScaled = self.model.named_steps['scaler'].transform(self.x)
+#     fig, axs = skens.partial_dependence.plot_partial_dependence(self._getClassifier(), X=xScaled, features=features,
+#                                                                 feature_names=self._getFeatureNames(),
+#                                                                 percentiles=(0.05, 0.95), grid_resolution=100)
+#     # fig.suptitle('Partial Dependence: {}'.format(self.name))
+#     # fig.subplots_adjust(top=0.9)
+#     fig.set_tight_layout(True)
+#     fig.show()
 
 
 class SVM(ModelNormalAbs):
@@ -1017,19 +809,13 @@ class SVM(ModelNormalAbs):
                  gamma: Union[str, float] = 'auto',
                  class_weight: Union[None, str] = 'balanced', random_state: Union[int, None] = 1):
         scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
-        classifier = _SVMSklearn(C=C, kernel=kernel, degree=degree, gamma=gamma, class_weight=class_weight,
-                                 random_state=random_state, probability=False)
+        classifier = skmdl._SVM(C=C, kernel=kernel, degree=degree, gamma=gamma, class_weight=class_weight,
+                                random_state=random_state, probability=False)
         model = skpipe.Pipeline(steps=[('scaler', scaler), ('clf', classifier)])
         ModelNormalAbs.__init__(self, model=model, name='SVM ({}):'.format(kernel))
 
     def _getClassifier(self) -> sksvm.SVC:
         return self.model.named_steps['clf']
-
-    def printSummary(self):
-        print('****** {} ******\n'.format(str.upper(self.name)))
-        self.printSetsInfo()
-        self.printPerformance()
-        self.printConfusion()
 
 
 class SVMCV(SVM):
@@ -1039,33 +825,30 @@ class SVMCV(SVM):
     Todo: Add a CV-classifier generator
     """
 
-    def __init__(self, scale: bool = True, kernel: str = 'poly', degree: int = 2, gamma: Union[str, float] = 'auto',
+    def __init__(self, cv=5, scale: bool = True, kernel: str = 'poly', degree: int = 2,
                  class_weight: Union[None, str] = 'balanced', random_state: Union[int, None] = 1):
-        grid = {'clf__C': (0.01, 0.1, 1, 10, 100)}
-        SVM.__init__(self, scale=scale, C=grid['clf__C'][0], kernel=kernel, degree=degree, gamma=gamma,
-                     class_weight=class_weight, random_state=random_state)
-        self.model = skms.GridSearchCV(self.model, param_grid=grid, scoring='accuracy', cv=5)
+        self.grid = {'clf__C': np.exp2(np.arange(-4, 5, 2)), 'clf__gamma': np.exp2(np.arange(-5, -1, 1))}
+        SVM.__init__(self, scale=scale, C=self.grid['clf__C'][0], kernel=kernel, degree=degree,
+                     gamma=self.grid['clf__gamma'][0], class_weight=class_weight, random_state=random_state)
+        self.model = skms.GridSearchCV(self.model, param_grid=self.grid, scoring='accuracy', cv=cv)
         self.name = 'SVM ({}):'.format(kernel)
 
     def _getClassifier(self) -> sksvm.SVC:
         return self.model.best_estimator_.named_steps['clf']
 
-    def printBestC(self) -> None:
-        print('-----Best C-----')
-        print('C = {:.2f} with the score = {:.2f}'.format(self.model.best_params_['clf__C'], self.model.best_score_))
+    def printBestParamCV(self) -> None:
+        print('-----Best CV Parameters-----')
+        for param in self.grid:
+            print('{} = {:.2f}'.format(param[5:], self.model.best_params_[param]))
+        print('...with the score = {:.2f}'.format(self.model.best_score_))
         print('')
 
-    def printSummary(self):
-        print('****** {} ******\n'.format(str.upper(self.name)))
-        self.printSetsInfo()
-        self.printBestC()
-        self.printPerformance()
-        self.printConfusion()
+    def printCoefficientsInfo(self):
+        SVM.printCoefficientsInfo(self)
+        self.printBestParamCV()
 
 
 if __name__ == '__main__':
-    import mkl
-    # import pygpu
     import theano
     import sklearn
 
@@ -1076,10 +859,9 @@ if __name__ == '__main__':
     print('...floatX = {}'.format(theano.config.floatX))
     print('...blas.ldflags = {}'.format(theano.config.blas.ldflags))
     print('...blas.check_openmp = {}'.format(theano.config.blas.check_openmp))
-    # print('pygpy v. {}'.format(pygpu.__version__))
-    # print('MKL v. {}'.format(mkl.__version__))
     # theano.test()
     print(os.getcwd())
+
     model = pm.Model(name='')
     # self.model_.Var('beta', pm.Normal(mu=0, sd=self.featuresSd))
     with model:
