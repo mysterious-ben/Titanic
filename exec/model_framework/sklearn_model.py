@@ -4,6 +4,7 @@ Auxiliary Sklearn-compatible classification class
 
 import numbers
 import os
+
 os.environ['THEANO_FLAGS'] = "floatX=float32"
 from typing import Iterable, Union
 
@@ -20,13 +21,17 @@ import pymc3 as pm
 from pymc3 import math as pmmath
 # import xgboost
 
+import exec.model_framework.utilmodel as utmdl
+
 
 class _LogisticGAM(gam.LogisticGAM):
     """
     Sklearn-compatible Additive Logistic base classifier
+    Todo: Imply docstring for modified Sklearn classifiers from the original classifiers
     """
 
-    def __init__(self, lam=0.6, max_iter=100, n_splines=25, spline_order=3,
+    def __init__(self, verbose=0,
+                 lam=0.6, max_iter=100, n_splines=25, spline_order=3,
                  penalties='auto', dtype='auto', tol=1e-4,
                  callbacks=('deviance', 'diffs', 'accuracy'),
                  fit_intercept=True, fit_linear=False, fit_splines=True,
@@ -37,17 +42,14 @@ class _LogisticGAM(gam.LogisticGAM):
                                  fit_intercept=fit_intercept, fit_linear=fit_linear, fit_splines=fit_splines,
                                  constraints=constraints)
 
-    def get_params(self, deep=False):
-        params = gam.LogisticGAM.get_params(self, deep=deep)
-        del params['verbose']
-        return params
+    # def get_params(self, deep=False):
+    #     params = gam.LogisticGAM.get_params(self, deep=deep)
+    #     del params['verbose']
+    #     return params
 
     def predict_proba(self, X):
         proba = gam.LogisticGAM.predict_proba(self, X)
-        skProba = np.zeros((len(proba), 2), dtype=float)
-        skProba[:, 1] = proba
-        skProba[:, 0] = 1 - proba
-        return skProba
+        return utmdl.proba2d(proba1d=proba)
 
 
 class _LogisticLinearLocal(skbase.BaseEstimator, skbase.ClassifierMixin):
@@ -86,10 +88,8 @@ class _LogisticLinearLocal(skbase.BaseEstimator, skbase.ClassifierMixin):
     def predict_proba(self, X) -> np.ndarray:
         skutilvalid.check_is_fitted(self, ['model_'])
         dsn_pred = self.decision_function(X)
-        proba_pred = np.zeros((X.shape[0], 2), dtype=np.float)
-        proba_pred[:, 1] = 1 / (1 + np.exp(-dsn_pred))
-        proba_pred[:, 0] = 1 - proba_pred[:, 0]
-        return proba_pred
+        dsn_pred = 1 / (1 + np.exp(-dsn_pred))
+        return utmdl.proba2d(proba1d=dsn_pred)
 
     def _check_X_y_fit(self, X, y):
         X, y = skutilvalid.check_X_y(X, y)
@@ -162,10 +162,7 @@ class _LogisticBayesian(skbase.BaseEstimator, skbase.ClassifierMixin):
     def predict_proba(self, X) -> np.ndarray:
         skutilvalid.check_is_fitted(self, ['model_'])
         dsn_pred = self.decision_function(X)
-        proba_pred = np.zeros((X.shape[0], 2), dtype=np.float)
-        proba_pred[:, 1] = dsn_pred
-        proba_pred[:, 0] = 1 - proba_pred[:, 0]
-        return proba_pred
+        return utmdl.proba2d(proba1d=dsn_pred)
 
     def _check_X_y_fit(self, X, y):
         X, y = skutilvalid.check_X_y(X, y)
@@ -185,7 +182,5 @@ class _SVM(sksvm.SVC):
 
     def predict_proba(self, X) -> np.ndarray:
         dsn_pred = self.decision_function(X)
-        proba_pred = np.zeros((X.shape[0], 2), dtype=np.float)
-        proba_pred[:, 1] = 1 / (1 + np.exp(-dsn_pred))
-        proba_pred[:, 0] = 1 - proba_pred[:, 0]
-        return proba_pred
+        dsn_pred = 1 / (1 + np.exp(-dsn_pred))
+        return utmdl.proba2d(proba1d=dsn_pred)
