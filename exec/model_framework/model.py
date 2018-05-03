@@ -669,7 +669,7 @@ class Tree(ModelNormalAbs):
     def printCoefficientsInfo(self):
         print('-----Feature Importance-----')
         importance = self._getBaseClassifier().feature_importances_
-        importanceSrs = pd.Series(importance, index=self.x.columns)
+        importanceSrs = pd.Series(importance, index=self._getFeatureNames())
         print(importanceSrs)
         print('')
 

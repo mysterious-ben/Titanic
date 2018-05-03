@@ -1,18 +1,21 @@
+from typing import Sequence
 import numpy as np
 import pandas as pd
+from sklearn import linear_model as sklm
 import matplotlib.pyplot as plt
 import seaborn as sns
 import functools
 
 
-def dropFeature(data, feature):
+def dropFeature(data: pd.DataFrame, feature: str):
     if feature in data.columns:
         data.drop(columns=feature, inplace=True)
     else:
         print(feature, ' is not in the DF')
 
 
-def imputeFeature(data, feature, method='mean'):
+def imputeFeature(data: pd.DataFrame, feature: str, method: str = 'mean',
+                  methodValue: float = None, methodExclude: Sequence = None):
     if feature in data.columns:
         if method == 'mean':
             data[feature].fillna(data[feature].mean(), inplace=True)
@@ -20,13 +23,21 @@ def imputeFeature(data, feature, method='mean'):
             data[feature].fillna(data[feature].median(), inplace=True)
         elif method == 'mode':
             data[feature].fillna(data[feature].mode()[0], inplace=True)
+        elif method == 'value':
+            data[feature].fillna(methodValue, inplace=True)
+        elif method == 'regress':
+            regr = sklm.LinearRegression(fit_intercept=True)
+            X = data.drop(columns=methodExclude + [feature]) #type: pd.DataFrame
+            y = data[feature]
+            regr.fit(X=X.loc[y.notna(), :], y=y.loc[y.notna()])
+            data.loc[y.isna(), feature] = regr.predict(X=X.loc[y.isna(), :])
         else:
             raise LookupError
     else:
         print(feature, ' is not in the DF')
 
 
-def dummyFeature(data, feature, **dummiesKeywords):
+def dummyFeature(data: pd.DataFrame, feature: str, **dummiesKeywords):
     if feature in data.columns:
         dummyNa = data[feature].isna().any()
         return pd.get_dummies(data, columns=[feature], dummy_na=dummyNa, **dummiesKeywords)
@@ -48,13 +59,13 @@ def normFeatures(data, features=None, method='std'):
     return Y
 
 
-def clipFeature(data, feature, nStd=3):
+def clipFeature(data: pd.DataFrame, feature: str, nStd=3):
     dMean = data[feature].mean()
     dStd = data[feature].std() * nStd
     data[feature].clip(lower=dMean - dStd, upper=dMean + dStd, inplace=True)
 
 
-def subplotShape(n):
+def subplotShape(n: int):
     nAxCol = int(np.ceil(np.sqrt(n)))
     nAxRow = nAxCol - 1 if nAxCol * (nAxCol - 1) >= n else nAxCol
     return nAxRow, nAxCol
@@ -72,7 +83,7 @@ def plotList(list, method, nList=None, fig=None, ax=None, nAxRow=None, nAxCol=No
     fig.tight_layout()
 
 
-def histColumns(data, groupby=None):
+def histColumns(data: pd.DataFrame, groupby=None):
     if groupby is None:
         plotList(list=data,
                  method=functools.partial(sns.distplot, kde=False,
@@ -90,7 +101,7 @@ def histColumns(data, groupby=None):
                      fig=fig, ax=ax, nAxRow=nAxRow, nAxCol=nAxCol)
 
 
-def regplot(data, featX, featY):
+def regplot(data: pd.DataFrame, featX: str, featY: str):
     fig, ax = plt.subplots()
     sns.regplot(data[featX], data[featY], logistic=True, ax=ax)
     sns.regplot(data[featX], data[featY], lowess=True, ax=ax)
