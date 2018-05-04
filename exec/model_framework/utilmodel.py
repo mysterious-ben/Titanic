@@ -1,9 +1,10 @@
 import numpy as np
+import pandas as pd
 
-def dataframeToXy(data):
-    if 'Survived' in data.columns:
-        X = data.drop(columns=['Survived'])
-        y = data['Survived'].values
+def dataframeToXy(data: pd.DataFrame, outcome='Survived'):
+    if outcome in data.columns:
+        X = data.drop(columns=[outcome])
+        y = data[outcome].values
     else:
         X = data.copy()
         y = None

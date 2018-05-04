@@ -4,11 +4,9 @@ Classification model class
 
 from abc import ABC, abstractmethod
 from typing import Sequence, Tuple, Dict, Callable, Union, Any, Type
-import numbers
-import inspect
-import functools
-import os
+import warnings
 import copy
+import os
 
 os.environ['THEANO_FLAGS'] = "floatX=float32"
 
@@ -52,7 +50,7 @@ class Metrics(ABC):
     recall = (skmtcs.recall_score, False)
 
     @staticmethod
-    def generator(method: str = 'accuracy') -> Tuple[Callable[[float, float], float], bool]:
+    def generator(method: str = 'accuracy') -> Tuple[Callable[[Sequence[float], Sequence[float]], float], bool]:
         """
         Generate a score function from its name
 
@@ -627,9 +625,12 @@ class KNNCV(KNN):
     Todo: Check that CV does not give an optimistic score when random states are chained
     """
 
-    def __init__(self, cv=5, scale: bool = True, weights: str = 'uniform'):
-        print('*DEPRECIATED*  Use genModelCV instead ')
-        self.grid = {'clf__n_neighbors': (5, 10, 20, 40)}
+    def __init__(self, cv=5, scale: bool = True, weights: str = 'uniform', grid=None):
+        warnings.warn('*DEPRECIATED*  Use genModelCV instead', DeprecationWarning)
+        if grid is None:
+            self.grid = {'clf__n_neighbors': (5, 10, 20, 40)}
+        else:
+            self.grid = {'clf__' + x: grid[x] for x in grid}
         KNN.__init__(self, scale=scale, n_neighbors=self.grid['clf__n_neighbors'][0], weights=weights)
         self.model = skms.GridSearchCV(self.model, param_grid=self.grid, scoring='accuracy', cv=cv)
         self.name = 'kNN CV'

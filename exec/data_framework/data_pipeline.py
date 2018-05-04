@@ -5,7 +5,7 @@ Data pipelines
 from typing import Union
 import numpy as  np
 import pandas as pd
-import exec.data_framework.utildata as ut
+import exec.data_framework.utildata as utdata
 
 
 def _featuresPipeline(data: pd.DataFrame, sibSpCutoff: Union[None, int] = 1, parchCutoff: Union[None, int] = 1,
@@ -26,20 +26,25 @@ def _featuresPipeline(data: pd.DataFrame, sibSpCutoff: Union[None, int] = 1, par
     dataC = data.copy()  # type: pd.DataFrame
     dataC.drop(columns=['Cabin', 'Ticket', 'Name'], inplace=True)
 
-    ut.imputeFeature(dataC, feature='Embarked', method='mode')
+    utdata.imputeFeature(dataC, feature='Embarked', method='mode')
 
+    assert 'male' in dataC.Sex.values
+    assert 'female' in dataC.Sex.values
+    assert 'S' in dataC.Embarked.values
+    assert 'C' in dataC.Embarked.values
+    assert 'Q' in dataC.Embarked.values
     dataC = pd.get_dummies(dataC, columns=['Embarked', 'Sex'], prefix_sep='')
     dataC.drop(columns=['EmbarkedQ', 'Sexmale'], inplace=True)
     dataC.rename(columns={'Sexfemale': 'Female'}, inplace=True)
 
-    ut.imputeFeature(dataC, feature='Age', method=ageImputeMethod, methodValue=-100, methodExclude=['Survived'])
+    utdata.clipFeature(dataC, 'Fare', nStd=3)
+    utdata.clipFeature(dataC, 'Age', nStd=3)
+
+    utdata.imputeFeature(dataC, feature='Age', method=ageImputeMethod, methodValue=-100, methodExclude=['Survived'])
     assert dataC.isna().any().any() == False
 
     if sibSpCutoff is not None: dataC.loc[dataC['SibSp'] > sibSpCutoff, 'SibSp'] = sibSpCutoff
     if parchCutoff is not None: dataC.loc[dataC['Parch'] > parchCutoff, 'Parch'] = parchCutoff
-
-    ut.clipFeature(dataC, 'Fare', nStd=3)
-    ut.clipFeature(dataC, 'Age', nStd=3)
 
     return dataC
 
@@ -51,6 +56,8 @@ def featuresPipeline(data: pd.DataFrame, version: int = 1):
     Args
         data: DataFrame with features as columns
         version:
+
+    Todo: Regress features with Random Forests and add a check for negative Age
     """
 
     if version == 1:

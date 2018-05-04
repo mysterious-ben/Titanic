@@ -15,7 +15,7 @@ def dropFeature(data: pd.DataFrame, feature: str):
 
 
 def imputeFeature(data: pd.DataFrame, feature: str, method: str = 'mean',
-                  methodValue: float = None, methodExclude: Sequence = None):
+                  methodValue: float = None, methodExclude: Sequence = tuple()):
     if feature in data.columns:
         if method == 'mean':
             data[feature].fillna(data[feature].mean(), inplace=True)
