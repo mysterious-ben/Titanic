@@ -15,9 +15,9 @@ def _featuresPipeline(data: pd.DataFrame, sibSpCutoff: Union[None, int] = 1, par
 
     # Args
         data: DataFrame with features as columns
-        SibSpCutoff:
-        ParchCutoff:
-        AgeImpute:
+        sibSpCutoff: Level to clip SibSp feature
+        parchCutoff: Level to clip Parch feature
+        ageImputeMethod: Method used to impute Age feature ('mean', 'median', 'mode', 'logistic', 'tree')
 
     Returns
         DataFrame with transformed features as columns
@@ -40,8 +40,9 @@ def _featuresPipeline(data: pd.DataFrame, sibSpCutoff: Union[None, int] = 1, par
     utdata.clipFeature(dataC, 'Fare', nStd=3)
     utdata.clipFeature(dataC, 'Age', nStd=3)
 
+    utdata.imputeFeature(dataC, feature='Fare', method='mean')
     utdata.imputeFeature(dataC, feature='Age', method=ageImputeMethod, methodValue=-100, methodExclude=['Survived'])
-    assert dataC.isna().any().any() == False
+    assert dataC.isna().sum().sum() == 0, dataC.isna().sum()
 
     if sibSpCutoff is not None: dataC.loc[dataC['SibSp'] > sibSpCutoff, 'SibSp'] = sibSpCutoff
     if parchCutoff is not None: dataC.loc[dataC['Parch'] > parchCutoff, 'Parch'] = parchCutoff
@@ -55,9 +56,9 @@ def featuresPipeline(data: pd.DataFrame, version: int = 1):
 
     Args
         data: DataFrame with features as columns
-        version:
+        version: Version of the feature processing pipeline (1, 2, 3, 4, 5); version=5 is recommended
 
-    Todo: Regress features with Random Forests and add a check for negative Age
+    Todo: Add a check for negative Age
     """
 
     if version == 1:
@@ -67,14 +68,16 @@ def featuresPipeline(data: pd.DataFrame, version: int = 1):
     if version == 3:
         return _featuresPipeline(data=data, sibSpCutoff=2, parchCutoff=3, ageImputeMethod='value')
     if version == 4:
-        return _featuresPipeline(data=data, sibSpCutoff=2, parchCutoff=3, ageImputeMethod='regress')
+        return _featuresPipeline(data=data, sibSpCutoff=2, parchCutoff=3, ageImputeMethod='logistic')
+    if version == 5:
+        return _featuresPipeline(data=data, sibSpCutoff=2, parchCutoff=3, ageImputeMethod='tree')
     else:
         raise LookupError
 
 
 def _combineTrainTest(dataTrain: pd.DataFrame, dataTest: pd.DataFrame, outcome: str = 'Survived'):
     # dataTest[outcome] = -1
-    assert all(dataTrain.columns.values == dataTest.columns.values)
+    np.testing.assert_equal(dataTrain.columns.values, dataTest.columns.values)
     return pd.concat([dataTrain, dataTest], axis=0, join='inner', keys=[False, True])
 
 

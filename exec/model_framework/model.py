@@ -44,10 +44,10 @@ class Metrics(ABC):
 
     accuracy = (skmtcs.accuracy_score, False)
     accproba = (lambda y, yH: 1. - skmtcs.mean_absolute_error(y, yH[:, 1]), True)
-    logproba = (lambda y, yH: -skmtcs.log_loss(y, yH[:, 1]), True)
+    logproba = (lambda y, yH: -skmtcs.log_loss(y, yH[:, 1], labels=[0, 1]), True)
     aucproba = (lambda y, yH: skmtcs.roc_auc_score(y, yH[:, 1]), True)
-    precision = (skmtcs.precision_score, False)
-    recall = (skmtcs.recall_score, False)
+    precision = (lambda y, yH: skmtcs.precision_score(y, yH, labels=[0, 1]), False)
+    recall = (lambda y, yH: skmtcs.recall_score(y, yH, labels=[0, 1]), False)
 
     @staticmethod
     def generator(method: str = 'accuracy') -> Tuple[Callable[[Sequence[float], Sequence[float]], float], bool]:
@@ -131,6 +131,9 @@ class ModelAbs(ABC):
         self.ytH = None
         self.ytP = None
 
+    def _ytValid(self) -> bool:
+        return (self.yt is not None) and (np.sum(np.isnan(self.yt)) == 0)
+
     def scoreIS(self, methods: Sequence[str] = ('accuracy',)) -> Dict[str, float]:
         """Score the classifier (in-sample)"""
         scores = {}
@@ -164,7 +167,7 @@ class ModelAbs(ABC):
         """Compute a confusion matrix of the classifier (IS and OOS)"""
         confIS = skmtcs.confusion_matrix(self.y, self.yH)
         confIS = confIS / confIS.sum().sum()
-        if self.yt is not None:
+        if self._ytValid():
             confOOS = skmtcs.confusion_matrix(self.yt, self.ytH)
             confOOS = confOOS / confOOS.sum().sum()
         else:
@@ -202,7 +205,7 @@ class ModelAbs(ABC):
         else:
             methods = ('accuracy', 'accproba', 'logproba', 'aucproba', 'recall', 'precision')
         scoreIS = self.scoreIS(methods)
-        scoreOOS = self.scoreOOS(methods)
+        scoreOOS = self.scoreOOS(methods) if self._ytValid() else {x: np.nan for x in methods}
         scoreCV = self.scoreCV(methods, cv=cv) if cv is not None else {x: np.nan for x in methods}
         print('-----Performance-----')
         for method in methods:
@@ -212,7 +215,7 @@ class ModelAbs(ABC):
 
     def printCoefficientsInfo(self):
         """Print information on classifier coefficients"""
-        pass
+        print()
 
     def printSummary(self, cv: Union[None, int] = 5) -> None:
         """Print a summary on the classifier"""
@@ -226,6 +229,8 @@ class ModelAbs(ABC):
         """Plot the ROC curve"""
         if self.yP is None:
             print('<PROBABILITY IS NONE: ROC PLOT IS NOT AVAILABLE>')
+        elif not self._ytValid():
+            print('<TEST OUTCOMES ARE NOT VALID: ROC PLOT IS NOT AVAILABLE>')
         else:
             fig, ax = plt.subplots()
             self.staticPlotROC(self.y, self.yP[:, 1], ax=ax, label='IS', title='ROC: {}'.format(self.name))
@@ -927,12 +932,14 @@ class Vote(ModelNormalAbs):
     Todo: [Long-term] Make ModelNormalAbs class a decorator for Sklearn-compatible classifiers
     """
 
-    def __init__(self, scale: bool, Models: Sequence[Tuple[str, ModelNormalAbs]], voting='hard', weights=None):
+    def __init__(self, scale: bool, Models: Sequence[Tuple[str, ModelNormalAbs]], voting='hard', weights=None,
+                 baseClassifiersInfo=True):
         """
         If scale is True, you can use scale = False for the underlying models. Otherwise, the data will be scaled
         twice.
         """
         self.Models = Models
+        self.baseClassifiersInfo = baseClassifiersInfo
         scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
         classifier = skens.VotingClassifier(estimators=[[x, y.model] for x, y in Models], voting=voting,
                                             weights=weights)
@@ -942,17 +949,35 @@ class Vote(ModelNormalAbs):
     def _getBaseClassifier(self) -> skens.VotingClassifier:
         return self.model.named_steps['clf']
 
+    def fit(self, data):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            ModelNormalAbs.fit(self, data=data)
+
+    def predict(self, data):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            ModelNormalAbs.predict(self, data=data)
+
+    def printSummary(self, cv: Union[None, int] = 5):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            ModelNormalAbs.printSummary(self, cv=cv)
+
     def printCoefficientsInfo(self):
-        for i, Model, estimator in zip(range(len(self.Models)), self.Models, self._getBaseClassifier().estimators_):
-            try:
-                M = Model[1].copy()
-                M.model = estimator
-                M._getFeatureNames = lambda: self.x.columns.values
-                print('[{} : {}]'.format(i, Model[0]))
-                M.printCoefficientsInfo()
-            except:
-                print('<PRINTING FAILED>')
-                print('')
+        if self.baseClassifiersInfo:
+            for i, Model, estimator in zip(range(len(self.Models)), self.Models, self._getBaseClassifier().estimators_):
+                try:
+                    M = Model[1].copy()
+                    M.model = estimator
+                    M._getFeatureNames = lambda: self.x.columns.values
+                    print('[{} : {}]'.format(i, Model[0]))
+                    M.printCoefficientsInfo()
+                except:
+                    print('<PRINTING FAILED>')
+                    print('')
+        else:
+            ModelNormalAbs.printCoefficientsInfo(self)
 
 
 class VoteCV(Vote):
@@ -963,12 +988,13 @@ class VoteCV(Vote):
     """
 
     def __init__(self, cv: int, scale: bool, Models: Sequence[Tuple[str, ModelNormalAbs]], voting='hard',
-                 weightsGrid=Sequence[Sequence[float]]):
+                 weightsGrid=Sequence[Sequence[float]], baseClassifiersInfo=True):
         """
         If scale is True, you can use scale = False for the underlying models. Otherwise, the data will be scaled
         twice.
         """
-        Vote.__init__(self, scale=scale, Models=Models, voting=voting, weights=None)
+        Vote.__init__(self, scale=scale, Models=Models, voting=voting, weights=None,
+                      baseClassifiersInfo=baseClassifiersInfo)
         scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
         classifier = skvote.VotingClassifierCV(estimators=[[x, y.model] for x, y in Models], voting=voting,
                                                weights=weightsGrid, cv=cv, scoring='accuracy')
@@ -981,10 +1007,43 @@ class VoteCV(Vote):
     def printCoefficientsInfo(self):
         Vote.printCoefficientsInfo(self)
         print('-----Best CV Parameters-----')
-        print('{} = {}'.format('weights', list(map(utgen.prettyFloat, self._getBaseClassifier().weights_))))
+        w = np.array(self._getBaseClassifier().weights_)
+        idx = np.argsort(-w)
+        print('-----Weights-----')
+        for i in idx:
+            if w[i] > 0: print('{} = {:.2f}'.format(self.Models[i][0], w[i]))
         scores = np.mean(self._getBaseClassifier().scores_, axis=1)
         print('...with the score = {:.2f}   | avg = {:.2f}, std = {:.2f}'
               .format(np.max(scores), np.mean(scores), np.std(scores)))
+        print('')
+
+
+class VoteRegress(Vote):
+    def __init__(self, cv: int, scale: bool, Models: Sequence[Tuple[str, ModelNormalAbs]], voting='hard',
+                 loss='square',
+                 baseClassifiersInfo=True):
+        """
+        If scale is True, you can use scale = False for the underlying models. Otherwise, the data will be scaled
+        twice.
+        """
+        Vote.__init__(self, scale=scale, Models=Models, voting=voting, weights=None,
+                      baseClassifiersInfo=baseClassifiersInfo)
+        scaler = skprcss.StandardScaler(with_mean=scale, with_std=scale)
+        classifier = skmdl._VoteRegress(estimators=[[x, y.model] for x, y in Models], voting=voting,
+                                        cv=cv, loss=loss)
+        self.model = skpipe.Pipeline(steps=[('scaler', scaler), ('clf', classifier)])
+        self.name += ' Regress'
+
+    def _getBaseClassifier(self) -> skvote.VotingClassifierCV:
+        return self.model.named_steps['clf']
+
+    def printCoefficientsInfo(self):
+        Vote.printCoefficientsInfo(self)
+        w = self._getBaseClassifier().weights
+        idx = np.argsort(-w)
+        print('-----Weights-----')
+        for i in idx:
+            if w[i] > 0: print('{} = {:.2f}'.format(self.Models[i][0], w[i]))
         print('')
 
 
@@ -999,7 +1058,7 @@ if __name__ == '__main__':
     print('...floatX = {}'.format(theano.config.floatX))
     print('...blas.ldflags = {}'.format(theano.config.blas.ldflags))
     print('...blas.check_openmp = {}'.format(theano.config.blas.check_openmp))
-    # theano.test()
+    # theano.tests()
     print(os.getcwd())
 
     model = pm.Model(name='')

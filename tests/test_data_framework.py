@@ -50,7 +50,7 @@ class TestDataFramework(unittest.TestCase):
 
     def test_featuresPipeline_version1(self):
         """
-        Todo: Add a unit test case for 3-std feature cap
+        Todo: Add a unit tests case for 3-std feature cap
         Todo: Add unit tests for all versions of the data pipeline
         """
 
@@ -67,12 +67,12 @@ class TestDataFramework(unittest.TestCase):
         np.testing.assert_equal(data.SibSp.values, [1, 1, 0, 1, 0])
         np.testing.assert_equal(data.Parch.values, [0, 1, 1, 0, 0])
 
-        ageCap = np.mean([20, 666, 20, 23.2]) + 3 * np.std([20, 666, 20, 23.2], ddof=1)
+        ageCap = np.median([20, 666, 20, 23.2]) + 3 * np.std([20, 666, 20, 23.2], ddof=1)
         age3 = min(666, ageCap)
         age2 = np.mean([20, age3, 20, 23.2])
         np.testing.assert_equal(data.Age.values, [20, age2, age3, 20, 23.2])
 
-        fareCap = np.mean([13, 15.5, 666, 13, 8.2]) + 3 * np.std([13, 15.5, 666, 13, 8.2], ddof=1)
+        fareCap = np.median([13, 15.5, 666, 13, 8.2]) + 3 * np.std([13, 15.5, 666, 13, 8.2], ddof=1)
         fare3 = min(666, fareCap)
         np.testing.assert_equal(data.Fare.values, [13, 15.5, fare3, 13, 8.2])
 
@@ -92,7 +92,7 @@ class TestDataFramework(unittest.TestCase):
                 pd.testing.assert_series_equal(data.SibSp, bmrk.SibSp)
                 pd.testing.assert_series_equal(data.Parch, bmrk.Parch)
 
-                ageCap = np.mean([20, 666, 20, 23.2, 20]) + 3 * np.std([20, 666, 20, 23.2, 20], ddof=1)
+                ageCap = np.median([20, 666, 20, 23.2, 20]) + 3 * np.std([20, 666, 20, 23.2, 20], ddof=1)
                 age3 = min(666, ageCap)
                 if version == 1 or version == 2:
                     age2 = np.mean([20, age3, 20, 23.2, 20])
@@ -104,7 +104,7 @@ class TestDataFramework(unittest.TestCase):
                     raise LookupError
                 np.testing.assert_equal(data.Age.values, [20, age2, age3, 20, 23.2])
 
-                fareCap = np.mean([13, 15.5, 666, 13, 8.2, 13, 9.5]) \
+                fareCap = np.median([13, 15.5, 666, 13, 8.2, 13, 9.5]) \
                           + 3 * np.std([13, 15.5, 666, 13, 8.2, 13, 9.5], ddof=1)
                 fare3 = min(666, fareCap)
                 np.testing.assert_equal(data.Fare.values, [13, 15.5, fare3, 13, 8.2])

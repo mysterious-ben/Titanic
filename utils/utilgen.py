@@ -1,5 +1,8 @@
 import numpy as np
+import pandas as pd
 import contextlib
+import os
+import sys
 
 
 def viewdf(df):
@@ -16,15 +19,28 @@ def viewdf(df):
 
 
 @contextlib.contextmanager
-def printOptions(precisionNp=2, suppressNp=False):
-    original = np.get_printoptions()
-    np.set_printoptions(precision=precisionNp, suppress=suppressNp)
+def printOptions(precision=2, suppressNp=False):
+    npOriginal = np.get_printoptions()
+    pdOriginal = pd.options.display.float_format
+    np.set_printoptions(precision=precision, suppress=suppressNp)
+    pd.options.display.float_format = '{:,.2f}'.format
     try:
         yield
     finally:
-        np.set_printoptions(**original)
+        np.set_printoptions(**npOriginal)
+        pd.options.display.float_format = pdOriginal
 
 
 class prettyFloat(float):
     def __repr__(self):
         return "%0.2f" % self
+
+@contextlib.contextmanager
+def suppressStdout():
+    with open(os.devnull, "w") as devnull:
+        old_stdout = sys.stdout
+        sys.stdout = devnull
+        try:
+            yield
+        finally:
+            sys.stdout = old_stdout

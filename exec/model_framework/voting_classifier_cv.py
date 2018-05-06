@@ -14,6 +14,7 @@ from itertools import product
 import numpy as np
 
 
+
 class PredefinedClassifier:
     def __init__(self, predictions):
         self.predictions = predictions
@@ -26,7 +27,8 @@ class PredefinedClassifier:
 
 
 class VotingClassifierCV(VotingClassifier):
-    def __init__(self, estimators: Sequence, voting: str = 'hard', weights: Union[None, int, Sequence[Sequence[float]]] = 2,
+    def __init__(self, estimators: Sequence, voting: str = 'hard',
+                 weights: Union[None, int, Sequence[Sequence[float]]] = 2,
                  n_jobs: int = 1, flatten_transform=None, cv=None, scoring='accuracy'):
         """
         cv and scoring - like in GridSearchCV

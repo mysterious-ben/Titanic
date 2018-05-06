@@ -2,6 +2,7 @@ from typing import Sequence
 import numpy as np
 import pandas as pd
 from sklearn import linear_model as sklm
+from sklearn import ensemble as skens
 import matplotlib.pyplot as plt
 import seaborn as sns
 import functools
@@ -25,9 +26,15 @@ def imputeFeature(data: pd.DataFrame, feature: str, method: str = 'mean',
             data[feature].fillna(data[feature].mode()[0], inplace=True)
         elif method == 'value':
             data[feature].fillna(methodValue, inplace=True)
-        elif method == 'regress':
+        elif method == 'logistic':
             regr = sklm.LinearRegression(fit_intercept=True)
-            X = data.drop(columns=methodExclude + [feature]) #type: pd.DataFrame
+            X = data.drop(columns=methodExclude + [feature])  # type: pd.DataFrame
+            y = data[feature]
+            regr.fit(X=X.loc[y.notna(), :], y=y.loc[y.notna()])
+            data.loc[y.isna(), feature] = regr.predict(X=X.loc[y.isna(), :])
+        elif method == 'tree':
+            regr = skens.RandomForestRegressor(n_estimators=32, max_leaf_nodes=4, random_state=1)
+            X = data.drop(columns=methodExclude + [feature])  # type: pd.DataFrame
             y = data[feature]
             regr.fit(X=X.loc[y.notna(), :], y=y.loc[y.notna()])
             data.loc[y.isna(), feature] = regr.predict(X=X.loc[y.isna(), :])
@@ -60,7 +67,7 @@ def normFeatures(data, features=None, method='std'):
 
 
 def clipFeature(data: pd.DataFrame, feature: str, nStd=3):
-    dMean = data[feature].mean()
+    dMean = data[feature].median()
     dStd = data[feature].std() * nStd
     data[feature].clip(lower=dMean - dStd, upper=dMean + dStd, inplace=True)
 

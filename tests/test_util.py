@@ -48,19 +48,19 @@ class TestUtil(unittest.TestCase):
 
     def test_imputeFeature_regress(self):
         data = self.dfs['nan3'].copy()
-        utdata.imputeFeature(data=data, feature='b', method='regress', methodExclude=['a'])
+        utdata.imputeFeature(data=data, feature='b', method='logistic', methodExclude=['a'])
         self.assertAlmostEqual(data.loc[1, 'b'], 1)
         self.assertAlmostEqual(data.loc[2, 'b'], 2)
 
     def test_clipFeature_noclip(self):
         data = self.dfs['full'].copy()
         utdata.clipFeature(data=data, feature='c', nStd=3)
-        self.assertTrue((self.dfs['full'] == data).all().all())
+        pd.testing.assert_frame_equal(data, self.dfs['full'], check_dtype=False)
 
     def test_clipFeature_clip(self):
         data = self.dfs['full'].copy()
         utdata.clipFeature(data=data, feature='b', nStd=0.5)
-        self.assertAlmostEqual(data.loc[3, 'b'], 0.75 + 0.5 * np.std([0, 0, 0, 3], ddof=1))
+        self.assertAlmostEqual(data.loc[3, 'b'], 0.0 + 0.5 * np.std([0, 0, 0, 3], ddof=1))
 
     def test_dataframeToXy(self):
         data = self.dfs['full'].copy()
@@ -71,7 +71,21 @@ class TestUtil(unittest.TestCase):
     def test_proba2d(self):
         proba1d = np.array([1, 0.5, 0, 0])
         proba2d = np.array([[0, 1], [0.5, 0.5], [1, 0], [1, 0]])
-        self.assertTrue((np.abs(utmdl.proba2d(proba1d=proba1d) - proba2d) < self.EPS).all().all())
+        np.testing.assert_equal(utmdl.proba2d(proba1d=proba1d), proba2d)
+
+    def test_weightsGrid(self):
+        grid = [[0.0, 0.0, 1.0], [0.0, 0.5, 0.5], [0.0, 1.0, 0.0], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0], [1.0, 0.0, 0.0]]
+        np.testing.assert_equal(utmdl.weightsGrid(n=3, step=0.5), grid)
+
+    def test_deviance_equal_weights(self):
+        np.testing.assert_equal(utmdl.deviance(w=np.array([0.5, 0.5]), X=np.array([[0, 0], [1, 1], [0, 0.5]])-0.5,
+                                               y=np.array([0, 1, 1])-0.5, probaEps=0.1),
+                                -2 * (np.log(0.9) + np.log(0.9) + np.log(0.25)))
+
+    def test_deviance_diff_weights(self):
+        np.testing.assert_equal(utmdl.deviance(w=np.array([0, 1]), X=np.array([[0.3, 0], [0, 1], [0, 0.5]])-0.5,
+                                               y=np.array([0, 1, 1])-0.5, probaEps=0.1),
+                                -2 * (np.log(0.9) + np.log(0.9) + np.log(0.5)))
 
 
 if __name__ == '__main__':

@@ -2,6 +2,8 @@
 Auxiliary Sklearn-compatible classification class
 """
 
+from typing import Iterable, Sequence, Tuple
+
 import numbers
 import os
 
@@ -10,8 +12,11 @@ from typing import Iterable, Union
 
 import numpy as np
 import pandas as pd
+from scipy import optimize
 import pygam as gam
 from sklearn import base as skbase
+import sklearn.model_selection as skms
+from sklearn import ensemble as skens
 from sklearn import svm as sksvm
 from sklearn.utils import validation as skutilvalid
 from statsmodels.nonparametric import kernel_regression as smkernel
@@ -21,6 +26,7 @@ import pymc3 as pm
 from pymc3 import math as pmmath
 # import xgboost
 
+import utils.utilgen as utgen
 import exec.model_framework.utilmodel as utmdl
 
 
@@ -42,10 +48,10 @@ class _LogisticGAM(gam.LogisticGAM):
                                  fit_intercept=fit_intercept, fit_linear=fit_linear, fit_splines=fit_splines,
                                  constraints=constraints)
 
-    # def get_params(self, deep=False):
-    #     params = gam.LogisticGAM.get_params(self, deep=deep)
-    #     del params['verbose']
-    #     return params
+    def fit(self, X, y, weights=None):
+        self.classes_ = np.unique(y)
+        gam.LogisticGAM.fit(self, X=X, y=y, weights=weights)
+        return self
 
     def predict_proba(self, X):
         proba = gam.LogisticGAM.predict_proba(self, X)
@@ -64,7 +70,7 @@ class _LogisticLinearLocal(skbase.BaseEstimator, skbase.ClassifierMixin):
     def fit(self, X: Union[pd.DataFrame, np.ndarray], y: Union[pd.DataFrame, np.ndarray, Iterable]) \
             -> skbase.ClassifierMixin:
         X, y = self._check_X_y_fit(X, y)
-        # self.classes_ = skutilmult.unique_labels(y)
+        self.classes_ = np.unique(y)
         self.nfeatures_ = X.shape[1]
         bw = np.full(self.nfeatures_, self.bw) if isinstance(self.bw, numbers.Number) else self.bw
 
@@ -184,3 +190,68 @@ class _SVM(sksvm.SVC):
         dsn_pred = self.decision_function(X)
         dsn_pred = 1 / (1 + np.exp(-dsn_pred))
         return utmdl.proba2d(proba1d=dsn_pred)
+
+
+class _VoteRegress(skens.VotingClassifier):
+    def __init__(self, estimators: Sequence, voting: str = 'hard',
+                 n_jobs: int = 1, flatten_transform=None, cv=None, loss: str = 'square', probaEps: float = 1e-3):
+        """
+        Sklearn-compatible voting classifier with regressed weights
+        """
+
+        skens.VotingClassifier.__init__(self, estimators=estimators, voting=voting,
+                                        weights=np.ones(len(estimators)), n_jobs=n_jobs,
+                                        flatten_transform=flatten_transform)
+        self.cv = cv
+        self.loss = loss
+        self.probaEps = probaEps
+
+    def fit(self, X, y, sample_weight=None):
+        # --fit to the full data
+        skens.VotingClassifier.fit(self, X=X, y=y, sample_weight=sample_weight)
+
+        # --generate cross_validated predictions for each classifier
+        fit_params = {}
+        if sample_weight is not None:
+            fit_params['sample_weight'] = sample_weight
+        if self.voting == 'soft':
+            method = 'predict_proba'
+        elif self.voting == 'hard':
+            method = 'predict'
+        else:
+            raise LookupError
+        predictions = np.empty((X.shape[0], len(self.estimators)), dtype=np.float)
+        for i, est in enumerate(self.estimators):
+            pred = skms.cross_val_predict(estimator=est[1], X=X, y=y, cv=self.cv, n_jobs=self.n_jobs,
+                                          fit_params=fit_params, method=method)
+            predictions[:, i] = pred[:, 1]
+
+        # --fit weights using predictions
+        X_, y_ = predictions - 0.5, y - 0.5
+        nFeatures = X_.shape[1]
+        if self.loss == 'square':
+            self.weights, _ = optimize.nnls(A=X_, b=y_)
+            # self.weights /= np.sum(self.weights)
+        elif self.loss == 'squareH':
+            bounds = tuple((0, None) for _ in range(nFeatures))
+            self.weights = optimize.minimize(fun=utmdl.squareH, x0=np.full(nFeatures, 1. / nFeatures),
+                                             args=(X_, y_), bounds=bounds, method='SLSQP')['x']
+            # self.weights /= np.sum(self.weights)
+        elif self.loss == 'deviance':
+            bounds = tuple((0, None) for _ in range(nFeatures))
+            constraints = {'type': 'eq', 'fun': lambda x: 1. - np.sum(x)}
+            self.weights = optimize.minimize(fun=utmdl.deviance, x0=np.full(nFeatures, 1. / nFeatures),
+                                             args=(X_, y_, self.probaEps),
+                                             bounds=bounds, constraints=constraints, method='SLSQP')['x']
+        elif self.loss == 'devianceNormalized':
+            bounds = tuple((0, None) for _ in range(nFeatures))
+            constraints = {'type': 'eq', 'fun': lambda x: 1. - np.sum(x)}
+            predFactor = (np.max(np.abs(X_), axis=0) * 2) * (1. - self.probaEps)
+            X_ /= predFactor[None, :]
+            self.weights = optimize.minimize(fun=utmdl.deviance, x0=np.full(nFeatures, 1. / nFeatures),
+                                             args=(X_, y_, self.probaEps), bounds=bounds, constraints=constraints,
+                                             method='SLSQP')['x']
+            self.weights /= predFactor
+        else:
+            raise LookupError
+        return self
