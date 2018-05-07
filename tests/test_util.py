@@ -1,5 +1,4 @@
 import unittest
-import utils.utilgen as utgen
 import exec.data_framework.utildata as utdata
 import exec.model_framework.utilmodel as utmdl
 

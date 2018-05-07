@@ -2,7 +2,7 @@
 Auxiliary Sklearn-compatible classification class
 """
 
-from typing import Iterable, Sequence, Tuple
+from typing import Sequence
 
 import numbers
 import os
@@ -26,7 +26,6 @@ import pymc3 as pm
 from pymc3 import math as pmmath
 # import xgboost
 
-import utils.utilgen as utgen
 import exec.model_framework.utilmodel as utmdl
 
 

@@ -31,7 +31,6 @@ from sklearn import svm as sksvm
 import pymc3 as pm
 # import xgboost
 
-import utils.utilgen as utgen
 import exec.model_framework.utilmodel as utmdl
 import exec.model_framework.sklearn_model as skmdl
 import exec.model_framework.voting_classifier_cv as skvote
