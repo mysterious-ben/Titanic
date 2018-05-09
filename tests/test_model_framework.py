@@ -1,5 +1,5 @@
 import unittest
-import exec.model_framework.model as mdl
+import modules.model_framework.model as mdl
 
 import numpy as np
 import pandas as pd

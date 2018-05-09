@@ -5,7 +5,7 @@ Data pipelines
 from typing import Union
 import numpy as  np
 import pandas as pd
-import exec.data_framework.utildata as utdata
+import modules.data_framework.utildata as utdata
 
 
 def _featuresPipeline(data: pd.DataFrame, sibSpCutoff: Union[None, int] = 1, parchCutoff: Union[None, int] = 1,

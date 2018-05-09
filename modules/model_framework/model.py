@@ -31,9 +31,9 @@ from sklearn import svm as sksvm
 import pymc3 as pm
 # import xgboost
 
-import exec.model_framework.utilmodel as utmdl
-import exec.model_framework.sklearn_model as skmdl
-import exec.model_framework.voting_classifier_cv as skvote
+import modules.model_framework.utilmodel as utmdl
+import modules.model_framework.sklearn_model as skmdl
+import modules.model_framework.voting_classifier_cv as skvote
 
 
 class Metrics(ABC):

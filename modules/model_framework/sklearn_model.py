@@ -26,7 +26,7 @@ import pymc3 as pm
 from pymc3 import math as pmmath
 # import xgboost
 
-import exec.model_framework.utilmodel as utmdl
+import modules.model_framework.utilmodel as utmdl
 
 
 class _LogisticGAM(gam.LogisticGAM):

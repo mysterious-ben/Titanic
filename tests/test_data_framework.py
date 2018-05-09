@@ -1,5 +1,5 @@
 import unittest
-import exec.data_framework.data_pipeline as dtp
+import modules.data_framework.data_pipeline as dtp
 
 import numpy as np
 import pandas as pd

@@ -1,6 +1,6 @@
 import unittest
-import exec.data_framework.utildata as utdata
-import exec.model_framework.utilmodel as utmdl
+import modules.data_framework.utildata as utdata
+import modules.model_framework.utilmodel as utmdl
 
 import numpy as np
 import pandas as pd
