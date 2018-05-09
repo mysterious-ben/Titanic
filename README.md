@@ -2,7 +2,7 @@
 *Titanic* is a playground Kaggle competition. It requires building a binary classifier to predict who survived the infamous Titanic disaster.
 
 
-##Project description
+## Project description
 **This project features:**
 - Feature processing and feature engineering
 - Test of most popular ML classification and model selection algorithms
@@ -24,7 +24,7 @@
 - Training and test data sets: the folder "data"
 
 
-##Classificatin problem
+## Classification problem
 **Features:** Name, Age, Sex, Ticket price, Ticket class, Ticket number, Number of family members aboard, Port of embankment
 
 **Outcome variable:** Survived (binary)
@@ -53,5 +53,5 @@ The main area to improve: feature engineering
 More details: see the folder "run"
 
 
-##Installation
+## Installation
 Painful //Todo: Add installation description
