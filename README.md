@@ -45,12 +45,12 @@
 - SVM
 - Model Selection and Stacking
 
-**Very briefly on the results**
-Random Forests, Boosted Trees, Logistic GAM, Logistic Local and SVM show comparable out-of-sample performance.
-The classifier for the Kaggle submission  is a classifier stacking Logistic Regression, Random Forests, Boosted Trees, Logistic Local and SVM, with the weights minimizing a cross-validated normalized deviance loss function.
-The current score on Kaggle: 0.78
-The main area to improve: feature engineering
-More details: see the folder "run"
+**Very briefly on the results:**
+- Random Forests, Boosted Trees, Logistic GAM, Logistic Local and SVM show comparable out-of-sample performance.
+- The classifier for the Kaggle submission is a classifier stacking Logistic Regression, Random Forests, Boosted Trees, Logistic Local and SVM, with the weights minimizing a cross-validated normalized deviance loss function.
+- The current score on Kaggle: 0.78
+- The main area to improve: feature engineering
+- More details: see the folder "run"
 
 
 ## Installation
