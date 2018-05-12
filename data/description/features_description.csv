@@ -1,0 +1,12 @@
+Variable,Definition,Value
+Survived,Survived the disaster,"0 = No, 1 = Yes"
+Name,Name,"Surname, Title Name"
+Sex,Sex,"male, female"
+Age,Age in years,> 0
+SibSp,Siblings + spouses aboard,"0, 1, 2, ..."
+Parch,Parents + children aboard,"0, 1, 2, ..."
+Ticket,Ticket number,Letters and digits
+Fare,Ticket price,> 0
+Pclass,Ticket class,"1 = Upper, 2 = Middle, 3 = Lower"
+Cabin,Cabin number,Desk letter (A - F) + digits
+Embarked,Port of embarkment,"C = Cherbourg, Q = Queenstown, S = Southampton"

@@ -57,8 +57,6 @@ def featuresPipeline(data: pd.DataFrame, version: int = 1):
     Args
         data: DataFrame with features as columns
         version: Version of the feature processing pipeline (1, 2, 3, 4, 5); version=5 is recommended
-
-    Todo: Add a check for negative Age
     """
 
     if version == 1:
@@ -71,6 +69,8 @@ def featuresPipeline(data: pd.DataFrame, version: int = 1):
         return _featuresPipeline(data=data, sibSpCutoff=2, parchCutoff=3, ageImputeMethod='logistic')
     if version == 5:
         return _featuresPipeline(data=data, sibSpCutoff=2, parchCutoff=3, ageImputeMethod='tree')
+    if version == 6:
+        pass
     else:
         raise LookupError
 

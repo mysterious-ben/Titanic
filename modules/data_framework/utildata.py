@@ -1,4 +1,4 @@
-from typing import Sequence
+from typing import Sequence, Iterable, Union
 import numpy as np
 import pandas as pd
 from sklearn import linear_model as sklm
@@ -6,18 +6,28 @@ from sklearn import ensemble as skens
 import matplotlib.pyplot as plt
 import seaborn as sns
 import functools
+import itertools
+import re
 
 
-def dropFeature(data: pd.DataFrame, feature: str):
+def dropFeature(data: pd.DataFrame, feature: str, inplace=True) -> Union[None, pd.DataFrame]:
     if feature in data.columns:
-        data.drop(columns=feature, inplace=True)
+        return data.drop(columns=feature, inplace=inplace)
     else:
         print(feature, ' is not in the DF')
 
 
+def dropFeatures(data: pd.DataFrame, features: Iterable[str], inplace=True) -> Union[None, pd.DataFrame]:
+    featuresC = (x for x in features if x in data.columns)
+    return data.drop(columns=featuresC, inplace=inplace)
+
+
 def imputeFeature(data: pd.DataFrame, feature: str, method: str = 'mean',
-                  methodValue: float = None, methodExclude: Sequence = tuple()):
+                  methodValue: float = None, methodExclude: Sequence = tuple()) -> None:
     if feature in data.columns:
+        if data[feature].isna().sum() == 0:
+            print('No NaNs')
+            return
         if method == 'mean':
             data[feature].fillna(data[feature].mean(), inplace=True)
         elif method == 'median':
@@ -26,15 +36,15 @@ def imputeFeature(data: pd.DataFrame, feature: str, method: str = 'mean',
             data[feature].fillna(data[feature].mode()[0], inplace=True)
         elif method == 'value':
             data[feature].fillna(methodValue, inplace=True)
-        elif method == 'logistic':
+        elif method == 'linear':
             regr = sklm.LinearRegression(fit_intercept=True)
-            X = data.drop(columns=methodExclude + [feature])  # type: pd.DataFrame
+            X = data.drop(columns=itertools.chain(methodExclude, [feature]))  # type: pd.DataFrame
             y = data[feature]
             regr.fit(X=X.loc[y.notna(), :], y=y.loc[y.notna()])
             data.loc[y.isna(), feature] = regr.predict(X=X.loc[y.isna(), :])
         elif method == 'tree':
-            regr = skens.RandomForestRegressor(n_estimators=32, max_leaf_nodes=4, random_state=1)
-            X = data.drop(columns=methodExclude + [feature])  # type: pd.DataFrame
+            regr = skens.RandomForestRegressor(n_estimators=64, max_leaf_nodes=16, random_state=1)
+            X = data.drop(columns=itertools.chain(methodExclude, [feature]))  # type: pd.DataFrame
             y = data[feature]
             regr.fit(X=X.loc[y.notna(), :], y=y.loc[y.notna()])
             data.loc[y.isna(), feature] = regr.predict(X=X.loc[y.isna(), :])
@@ -44,7 +54,7 @@ def imputeFeature(data: pd.DataFrame, feature: str, method: str = 'mean',
         print(feature, ' is not in the DF')
 
 
-def dummyFeature(data: pd.DataFrame, feature: str, **dummiesKeywords):
+def dummyFeature(data: pd.DataFrame, feature: str, **dummiesKeywords) -> pd.DataFrame:
     if feature in data.columns:
         dummyNa = data[feature].isna().any()
         return pd.get_dummies(data, columns=[feature], dummy_na=dummyNa, **dummiesKeywords)
@@ -52,7 +62,7 @@ def dummyFeature(data: pd.DataFrame, feature: str, **dummiesKeywords):
         print(feature, ' is not in the DF')
 
 
-def normFeatures(data, features=None, method='std'):
+def normFeatures(data, features=None, method='std') -> pd.DataFrame:
     Y = data.copy()
     if features is None: features = Y.columns
     if method == 'std':
@@ -66,7 +76,7 @@ def normFeatures(data, features=None, method='std'):
     return Y
 
 
-def clipFeature(data: pd.DataFrame, feature: str, nStd=3):
+def clipFeature(data: pd.DataFrame, feature: str, nStd=3) -> None:
     dMean = data[feature].median()
     dStd = data[feature].std() * nStd
     data[feature].clip(lower=dMean - dStd, upper=dMean + dStd, inplace=True)
@@ -78,7 +88,7 @@ def subplotShape(n: int):
     return nAxRow, nAxCol
 
 
-def plotList(list, method, nList=None, fig=None, ax=None, nAxRow=None, nAxCol=None):
+def plotList(list, method, nList=None, fig=None, ax=None, nAxRow=None, nAxCol=None) -> None:
     nList = len(list) if nList is None else nList
     if fig is None:
         nAxRow, nAxCol = subplotShape(nList)
@@ -90,7 +100,7 @@ def plotList(list, method, nList=None, fig=None, ax=None, nAxRow=None, nAxCol=No
     fig.tight_layout()
 
 
-def histColumns(data: pd.DataFrame, groupby=None):
+def histColumns(data: pd.DataFrame, groupby=None) -> None:
     if groupby is None:
         plotList(list=data,
                  method=functools.partial(sns.distplot, kde=False,
@@ -108,8 +118,20 @@ def histColumns(data: pd.DataFrame, groupby=None):
                      fig=fig, ax=ax, nAxRow=nAxRow, nAxCol=nAxCol)
 
 
-def regplot(data: pd.DataFrame, featX: str, featY: str):
+def regplot(data: pd.DataFrame, featX: str, featY: str) -> None:
     fig, ax = plt.subplots()
     sns.regplot(data[featX], data[featY], logistic=True, ax=ax)
     sns.regplot(data[featX], data[featY], lowess=True, ax=ax)
     fig.show()
+
+
+def getTitle(name: str) -> str:
+    match = re.match('.*, ([\w\s]*)\. .*', name)
+    if match is None:
+        return ''
+    else:
+        return match.groups(0)[0]
+
+
+if __name__ == '__main__':
+    print(getTitle('Moor, Master. Meier'))

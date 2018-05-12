@@ -47,7 +47,7 @@ class TestUtil(unittest.TestCase):
 
     def test_imputeFeature_regress(self):
         data = self.dfs['nan3'].copy()
-        utdata.imputeFeature(data=data, feature='b', method='logistic', methodExclude=['a'])
+        utdata.imputeFeature(data=data, feature='b', method='linear', methodExclude=['a'])
         self.assertAlmostEqual(data.loc[1, 'b'], 1)
         self.assertAlmostEqual(data.loc[2, 'b'], 2)
 
@@ -60,6 +60,12 @@ class TestUtil(unittest.TestCase):
         data = self.dfs['full'].copy()
         utdata.clipFeature(data=data, feature='b', nStd=0.5)
         self.assertAlmostEqual(data.loc[3, 'b'], 0.0 + 0.5 * np.std([0, 0, 0, 3], ddof=1))
+
+    def test_getTitle_match(self):
+        self.assertEqual(utdata.getTitle('Moor, Master. Meier'), 'Master')
+
+    def test_getTitle_nomatch(self):
+        self.assertEqual(utdata.getTitle('Moor, Master; Meier'), '')
 
     def test_dataframeToXy(self):
         data = self.dfs['full'].copy()
