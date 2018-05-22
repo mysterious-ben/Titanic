@@ -50,8 +50,9 @@ class TestDataFramework(unittest.TestCase):
 
     def test_featuresPipeline_version1(self):
         """
-        Todo: Add a unit tests case for 3-std feature cap
+        Todo: Add a unit tests case for 3-std feature cap (?)
         Todo: Add unit tests for all versions of the data pipeline
+        Todo: Add unit test for dtype=int8 check
         """
 
         version = 1

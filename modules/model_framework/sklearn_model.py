@@ -8,7 +8,7 @@ import numbers
 import os
 
 os.environ['THEANO_FLAGS'] = "floatX=float32"
-from typing import Iterable, Union
+from typing import Iterable, Sequence, Union
 
 import numpy as np
 import pandas as pd
@@ -21,12 +21,37 @@ from sklearn import svm as sksvm
 from sklearn.utils import validation as skutilvalid
 from statsmodels.nonparametric import kernel_regression as smkernel
 from statsmodels.nonparametric import _kernel_base as smkernelbase
+from sklearn import preprocessing as skprcss
 from theano import shared
 import pymc3 as pm
 from pymc3 import math as pmmath
 # import xgboost
 
 import modules.model_framework.utilmodel as utmdl
+
+
+class _Scaler(skbase.BaseEstimator, skbase.TransformerMixin):
+    """Scaler that only applies to selected variables"""
+
+    def __init__(self, copy: bool = True, with_mean: bool = True, with_std: bool = True,
+                 features: Union[None, Sequence[int], slice] = None):
+        self.copy = copy
+        self.with_mean = with_mean
+        self.with_std = with_std
+        self.features = features
+
+    def fit(self, X: Union[pd.DataFrame, np.ndarray], y=None):
+        self.scaler_ = skprcss.StandardScaler(copy=self.copy, with_mean=self.with_mean, with_std=self.with_std)
+        if isinstance(X, pd.DataFrame): X = X.values  # type: np.ndarray
+        if self.features is None: self.features = slice(None)
+        self.scaler_.fit(X=X[:, self.features], y=y)
+        return self
+
+    def transform(self, X: Union[pd.DataFrame, np.ndarray]):
+        if isinstance(X, pd.DataFrame): X = X.values  # type: np.ndarray
+        X = X.copy().astype(float)  # type: np.ndarray
+        X[:, self.features] = self.scaler_.transform(X=X[:, self.features])
+        return X
 
 
 class _LogisticGAM(gam.LogisticGAM):

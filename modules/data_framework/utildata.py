@@ -1,4 +1,4 @@
-from typing import Sequence, Iterable, Union
+from typing import Sequence, Iterable, Union, List
 import numpy as np
 import pandas as pd
 from sklearn import linear_model as sklm
@@ -8,6 +8,20 @@ import seaborn as sns
 import functools
 import itertools
 import re
+
+
+def scaleFeatureColumns(data: pd.DataFrame, exclude: Sequence=tuple()) -> pd.Index:
+    """Return names of the columns with non-binary features"""
+
+    types = data.dtypes.drop(columns=exclude)
+    return data.columns[types != np.uint8]
+
+
+def scaleFeatureIndices(data: pd.DataFrame, exclude: Sequence=tuple()) -> List:
+    """Return indices of the columns with non-binary features"""
+
+    types = data.dtypes.drop(columns=exclude)
+    return (types != np.uint8).values.tolist()
 
 
 def dropFeature(data: pd.DataFrame, feature: str, inplace=True) -> Union[None, pd.DataFrame]:
@@ -23,10 +37,11 @@ def dropFeatures(data: pd.DataFrame, features: Iterable[str], inplace=True) -> U
 
 
 def imputeFeature(data: pd.DataFrame, feature: str, method: str = 'mean',
-                  methodValue: float = None, methodExclude: Sequence = tuple()) -> None:
+                  methodValue: float = None, methodExclude: Sequence = tuple(),
+                  verbose=True) -> None:
     if feature in data.columns:
         if data[feature].isna().sum() == 0:
-            print('No NaNs')
+            if verbose: print('{}: No NaNs to impute with {}'.format(feature, method))
             return
         if method == 'mean':
             data[feature].fillna(data[feature].mean(), inplace=True)
@@ -51,7 +66,7 @@ def imputeFeature(data: pd.DataFrame, feature: str, method: str = 'mean',
         else:
             raise LookupError
     else:
-        print(feature, ' is not in the DF')
+        if verbose: print(feature, ' is not in the DF')
 
 
 def dummyFeature(data: pd.DataFrame, feature: str, **dummiesKeywords) -> pd.DataFrame:
