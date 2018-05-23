@@ -3,7 +3,7 @@ Classification model class
 """
 
 from abc import ABC, abstractmethod
-from typing import Sequence, Tuple, Dict, Callable, Union, Any, Type
+from typing import Sequence, Tuple, Dict, Callable, Union, Type
 import warnings
 import inspect
 import copy
@@ -111,10 +111,10 @@ class ModelAbs(ABC):
         # return skprcss.StandardScaler(with_mean=self.scale, with_std=self.scale)
         if self.scale == 'none':
             meanstd = False
-            scaleFeatures = None#list(range(len(self.x.columns)))
+            scaleFeatures = None  # list(range(len(self.x.columns)))
         elif self.scale == 'all':
             meanstd = True
-            scaleFeatures = None#list(range(len(self.x.columns)))
+            scaleFeatures = None  # list(range(len(self.x.columns)))
         elif self.scale == 'some':
             meanstd = True
             scaleFeatures = utdata.scaleFeatureIndices(data=self.x)
@@ -183,6 +183,26 @@ class ModelAbs(ABC):
             self.ytP = self.model.predict_proba(X=self.xt)
         except AttributeError:
             self.ytP = None
+
+    def submission(self) -> pd.DataFrame:
+        """Create DataFrame for Kaggle submission using ytH"""
+
+        submission = pd.DataFrame(index=self.xt.index, columns=['Survived'])
+        submission.loc[:, 'Survived'] = self.ytH
+        return submission
+
+    def fitPredict(self, dataTrain: pd.DataFrame, dataTest: pd.DataFrame) -> None:
+        """Fit, then predict"""
+
+        self.fit(data=dataTrain)
+        self.predict(data=dataTest)
+
+    def fitPredictSubmission(self, dataTrain: pd.DataFrame, dataTest: pd.DataFrame) -> pd.DataFrame:
+        """Fit, then predict, then create a submission"""
+
+        self.fit(data=dataTrain)
+        self.predict(data=dataTest)
+        return self.submission()
 
     def _ytValid(self) -> bool:
         return (self.yt is not None) and (np.sum(np.isnan(self.yt)) == 0)

@@ -63,6 +63,8 @@ def _featuresPipeline(data: pd.DataFrame, sibSpCutoff: Union[None, int] = 1, par
     if sibSpCutoff is not None: dataC.loc[dataC['SibSp'] > sibSpCutoff, 'SibSp'] = sibSpCutoff
     if parchCutoff is not None: dataC.loc[dataC['Parch'] > parchCutoff, 'Parch'] = parchCutoff
 
+    dataC.Survived = dataC.Survived.astype(np.uint8)
+
     return dataC
 
 
