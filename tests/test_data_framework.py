@@ -59,10 +59,10 @@ class TestDataFramework(unittest.TestCase):
         data = dtp.featuresPipeline(data=self.data, version=version)
 
         self.assertSetEqual(set(data.columns.values.tolist()), set(self.dataC.columns.values.tolist()))
-        pd.testing.assert_series_equal(data.Survived, self.data.Survived)
+        np.testing.assert_equal(data.Survived.values, self.data.Survived.values)
+        np.testing.assert_equal(data.Survived.values, self.dataC.Survived.values)
         pd.testing.assert_series_equal(data.Pclass, self.data.Pclass)
         pd.testing.assert_series_equal(data.Female, self.dataC.Female, check_dtype=False)
-        pd.testing.assert_series_equal(data.Survived, self.dataC.Survived)
         pd.testing.assert_series_equal(data.EmbarkedS, self.dataC.EmbarkedS, check_dtype=False)
         pd.testing.assert_series_equal(data.EmbarkedC, self.dataC.EmbarkedC, check_dtype=False)
         np.testing.assert_equal(data.SibSp.values, [1, 1, 0, 1, 0])

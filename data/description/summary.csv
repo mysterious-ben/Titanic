@@ -1,0 +1,121 @@
+Method,Sub-method,Hyper params,Data,Phase,Progress,Time spent,IS auc,CV auc,Val I auc,IS acc,CV acc,Val I acc,Val II acc
+Data Exploration,Cleaning / Plotting,#,3,0,Done,20h,#,#,#,#,#,#,#
+Logistic Regression,LR,(C = 1000),1,1,Done,-,0.86,0.85,0.82,0.79,0.78,0.81,
+Logistic Regression,LR,(C = 1000),7,5,Done,-,0.88,0.87,0.84,0.83,0.82,0.84,0.78468
+Logistic Regression,LR Rigde,C = 1,1,1,Done,10h,0.86,0.85,0.82,0.79,0.78,0.81,
+Logistic Regression,LR Rigde,C = 1,2,5,Done,-,0.86,0.85,0.82,0.79,0.78,0.80,
+Logistic Regression,LR Rigde,C = 1,4,5,Done,-,0.86,0.85,0.82,0.79,0.79,0.81,
+Logistic Regression,LR Rigde,C = 1,6,5,Done,-,0.88,0.87,0.84,0.83,0.81,0.84,
+Logistic Regression,LR Rigde,C = 1,7,5,Done,-,0.88,0.87,0.84,0.83,0.82,0.83,0.7799
+Logistic Regression,LR Rigde,CV: C = 4,2,1,Done,6h,0.86,0.85,0.82,0.79,0.77,0.81,
+Logistic Regression,LR Rigde,CV: C = 16,7,5,Done,-,0.88,0.87,0.84,0.83,0.82,0.84,0.78468
+Logistic Regression,LR Best Subset,"k = 6: [Female, Pclass, Fare, Parch, EmbarkedC, EmbarkedS]",1,1,Done,6h,0.84,0.83,0.81,0.78,0.77,0.79,
+Logistic Regression,LR Best Subset,"k = 6: [Female, Pclass, Fare, EmbarkedS, CabinNan, TitleMiss]",7,5,Done,-,0.85,0.84,0.82,0.78,0.78,0.78,0.73205
+Logistic Regression,LR GAM,"n_splines = 15
+lam = 5",1,2,Done,4h,0.87,0.85,0.82,0.81,0.80,0.82,
+Logistic Regression,LR GAM,"n_splines = 15
+lam = 5",2,5,Done,-,0.88,0.86,0.82,0.82,0.79,0.80,
+Logistic Regression,LR GAM,"n_splines = 15
+lam = 5",4,5,Done,-,0.87,0.85,0.82,0.82,0.79,0.80,
+Logistic Regression,LR GAM,"n_splines = 15
+lam = 5",6,5,Done,-,0.89,0.86,0.83,0.83,0.80,0.81,
+Logistic Regression,LR GAM,"n_splines = 15
+lam = 5",7,5,Done,-,0.89,0.86,0.83,0.83,0.81,0.81,
+Logistic Regression,LR GAM,"CV: n_splines = 4
+CV: lam = 0.25",7,5,Done,-,0.88,0.87,0.84,0.83,0.81,0.82,0.77511
+Logistic Regression,Local LR,bw = 1,1,2,Done,4h,0.92,0.85,0.82,0.85,0.77,0.83,
+Logistic Regression,Local LR,bw = 1,7,5,Done,-,0.94,0.85,0.84,0.88,0.80,0.84,
+Logistic Regression,Local LR,CV: bw = 4,7,5,Done,-,0.89,0.87,0.84,0.84,0.83,0.82,0.79904
+Logistic Regression,Bayes LR,STD = 10,1,2,Done,20h,0.84,,0.86,0.78,,0.78,
+Logistic Regression,Bayes LR,STD = 10,7,5,,,,,,,,,
+kNN,kNN,k = 10,1,1,Done,1h,0.88,0.82,0.83,0.81,0.74,0.81,
+kNN,kNN,k = 10,7,5,Done,-,0.89,0.82,0.82,0.81,0.77,0.79,
+kNN,kNN,CV: k = 10,7,5,Done,-,0.89,0.82,0.82,0.81,0.77,0.79,0.72248
+Decision Trees,CART,max_leaf_nodes = 8,1,1,Done,3h,0.88,0.83,0.85,0.83,0.77,0.83,
+Decision Trees,CART,max_leaf_nodes = 8,7,5,Done,-,0.88,0.84,0.86,0.82,0.80,0.80,
+Decision Trees,CART,CV: max_leaf_nodes = 12,7,5,Done,-,0.89,0.84,0.85,0.84,0.80,0.80,0.75119
+Decision Trees,Random Forests,"n_estimators = 512
+max_leaf_nodes = 16",1,2,Done,1h,0.93,0.86,0.87,0.87,0.81,0.82,
+Decision Trees,Random Forests,"n_estimators = 512
+max_leaf_nodes = 16",7,5,Done,-,0.93,0.86,0.87,0.87,0.81,0.82,
+Decision Trees,Random Forests,CV: max_leaf_nodes = 16,7,5,Done,-,0.96,0.87,0.87,0.89,0.81,0.84,0.76555
+Decision Trees,Boosted Trees,"n_estimators = 256
+max_leaf_nodes = 4
+learning rate = 0.12
+subsample = 1",1,2,Done,2h,0.97,0.86,0.84,0.91,0.81,0.82,
+Decision Trees,Boosted Trees,"n_estimators = 256
+max_leaf_nodes = 4
+learning_rate = 0.12
+subsample = 1",7,5,Done,-,0.97,0.87,0.84,0.92,0.82,0.83,
+Decision Trees,Boosted Trees,"CV: max_leaf_nodes = 4
+CV: learning_rate = 0.06
+CV: subsample = 1",7,5,Done,-,0.95,0.87,0.85,0.89,0.80,0.81,0.77033
+Decision Trees,Boosted Trees (XGBoost),,,2,Hold,6h,,,,,,,
+SVM,Radial SVM,CV: gamma = 0.03,1,2,Done,1h,0.86,0.84,0.83,0.80,0.78,0.79,
+SVM,Radial SVM,CV: gamma = 0.03,7,5,Done,-,0.88,0.85,0.84,0.83,0.79,0.82,?
+SVM,Polynomial SVM,"CV: degree = 4
+CV: gamma = 0.25",1,2,Done,10h,0.88,0.83,0.83,0.82,0.79,0.80,
+SVM,Polynomial SVM,"CV: degree = 4
+CV: gamma = 0.25",7,5,Done,-,0.90,0.84,0.84,0.83,0.81,0.79,?
+NNW,NNW,,,3,Skip,,,,,,,,
+NNW,Bayes NNW,,,3,Skip,,,,,,,,
+Model Averaging,Stacking (Vote),"vote = hard
+models = [Logistic, KNN, Boosted Trees, Random Forests, SVM, Linear Local]
+weights = equal",7,5,Done,5h,,,,0.85,0.83,0.82,
+Model Averaging,Stacking (Vote),"vote = soft
+models = …
+weights = equal",7,5,Done,-,0.93,0.88,0.86,0.86,0.83,0.82,
+Model Averaging,Stacking (VoteCV),"vote = hard
+models = …
+CV: weights =
+        RandomForest 0.30
+        Logistic 0.20
+        SVM 0.20
+        LinearLocal 0.20
+        BoostedTree 0.10",7,5,Done,5h,,,,0.86,0.82,0.83,
+Model Averaging,Stacking (VoteCV),"vote = soft
+models = …
+CV: weights = 
+        LinearLocal 0.80
+        Logistic 0.10
+        Boosted Trees 0.10",7,5,Done,-,0.90,0.88,0.85,0.85,0.84,0.83,
+Model Averaging,Stacking (VoteRegress),"vote = hard
+models = …
+CV: weights =
+        LinearLocal 0.30
+        KNN 0.22
+        RandomForest 0.20
+        BoostedTree 0.15
+        Logistic 0.10
+        SVM 0.04",7,5,Done,10h,,,,0.85,0.83,0.82,
+Model Averaging,Stacking (VoteRegress),"vote = soft
+models = …
+CV: weights =
+        Logistic 0.32
+        RandomForest 0.29
+        BoostedTree 0.28
+        LinearLocal 0.14
+        KNN 0.04",7,5,Done,-,0.93,0.87,0.86,0.86,0.83,0.83,
+Model Averaging,Stacking (VoteRegress),"vote = hard
+models = <extended set>
+CV: weights =
+        LinearLocal_bw4.0 0.23
+        SVM_degree4_gamma0.06 0.16
+        BoostedTree_sub1.0_leaf8 0.15
+        BoostedTree_sub0.85_leaf4 0.12
+        RandomForest_leaf32 0.10
+        BoostedTree_sub1.0_leaf4 0.07
+        BoostedTree_sub0.7_leaf8 0.06",7,5,Done,-,,,,0.90,0.83,0.81,
+Model Averaging,Stacking (VoteRegress),"vote = soft
+models = <extended set>
+CV: weights =
+Logistic = 0.34
+        BoostedTree_sub0.7_leaf8 = 0.21
+        BoostedTree_sub1.0_leaf8 = 0.16
+        LinearLocal_bw4.0 = 0.15
+        RandomForest_leaf8 = 0.13
+        SVM_degree2_gamma0.12 = 0.04
+        KNN_20_uniform = 0.04",7,5,Done,-,0.97,0.88,0.86,0.91,0.83,0.84,0.75598
+Feature Processing,"Entend SpSip, Parch
+Regress Age NaNs",,,5,Done,10h,#,#,#,#,#,#,#
+Feature Engineering,"New features: Title, CabinNaN, AgeNaN",,,5,Done,6h,#,#,#,#,#,#,#

@@ -9,19 +9,21 @@ import functools
 import itertools
 import re
 
+CATEGORICAL_TYPE = np.int8
+
 
 def scaleFeatureColumns(data: pd.DataFrame, exclude: Sequence=tuple()) -> pd.Index:
     """Return names of the columns with non-binary features"""
 
     types = data.dtypes.drop(columns=exclude)
-    return data.columns[types != np.uint8]
+    return data.columns[types != CATEGORICAL_TYPE]
 
 
 def scaleFeatureIndices(data: pd.DataFrame, exclude: Sequence=tuple()) -> List:
     """Return indices of the columns with non-binary features"""
 
     types = data.dtypes.drop(columns=exclude)
-    return (types != np.uint8).values.tolist()
+    return (types != CATEGORICAL_TYPE).values.tolist()
 
 
 def dropFeature(data: pd.DataFrame, feature: str, inplace=True) -> Union[None, pd.DataFrame]:

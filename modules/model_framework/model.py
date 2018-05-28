@@ -13,6 +13,7 @@ os.environ['THEANO_FLAGS'] = "floatX=float32"
 
 import matplotlib.image as img
 import matplotlib.pyplot as plt
+import seaborn as sns
 import numpy as np
 import pandas as pd
 import pydotplus
@@ -287,7 +288,7 @@ class ModelAbs(ABC):
             print('<PROBABILITY IS NONE: SOME PERFORMANCE STATISTICS ARE NOT AVAILABLE>')
             methods = ('accuracy',)
         else:
-            methods = ('accuracy', 'accproba', 'logproba', 'aucproba', 'recall', 'precision')
+            methods = ('accuracy', 'logproba', 'aucproba', 'recall', 'precision')  # 'accproba',
         scoreIS = self.scoreIS(methods)
         scoreOOS = self.scoreOOS(methods) if self._ytValid() else {x: np.nan for x in methods}
         scoreCV = self.scoreCV(methods, cv=cv) if cv is not None else {x: np.nan for x in methods}
@@ -316,7 +317,7 @@ class ModelAbs(ABC):
         elif not self._ytValid():
             print('<TEST OUTCOMES ARE NOT VALID: ROC PLOT IS NOT AVAILABLE>')
         else:
-            fig, ax = plt.subplots()
+            fig, ax = plt.subplots(figsize=(6.5, 6))
             self.staticPlotROC(self.y, self.yP[:, 1], ax=ax, label='IS', title='ROC: {}'.format(self.name))
             self.staticPlotROC(self.yt, self.ytP[:, 1], ax=ax, label='OOS', title='ROC: {}'.format(self.name))
             # fig.set_tight_layout(True)
@@ -447,6 +448,7 @@ class LogisticAbs(ModelAbs):
 class Logistic(LogisticAbs):
     """
     Logistic classifier
+    Todo: Add Z-score statistics
     """
 
     name = 'Logistic'
@@ -500,11 +502,13 @@ class LogisticBestSubset(LogisticAbs):
 
     name = 'Logistic kBest'
 
-    def __init__(self, scale: str = 'some', fit_intercept: bool = False, k: int = 5, C: int = 1., penalty='l2'):
+    def __init__(self, scale: str = 'some', fit_intercept: bool = False, k: int = 5, C: float = 1.,
+                 selectfun='f_classif', penalty='l2'):
         LogisticAbs.__init__(self, scale=scale)
         self.fit_intercept = fit_intercept
         self.k = k
         self.C = C
+        self.selectfun = selectfun
         self.penalty = penalty
 
     def _makeBaseClassifier(self) -> sklm.LogisticRegression:
@@ -515,7 +519,11 @@ class LogisticBestSubset(LogisticAbs):
         return self.model.named_steps['clf']
 
     def _makeSelector(self):
-        return skfs.SelectKBest(score_func=skfs.f_classif, k=self.k)
+        if self.selectfun == 'f_classif':
+            fun = skfs.f_classif
+        else:
+            raise LookupError
+        return skfs.SelectKBest(score_func=fun, k=self.k)
 
     def _makeModel(self) -> skpipe.Pipeline:
         scaler = self._makeScaler()
@@ -601,17 +609,21 @@ class LogisticGAM(ModelAbs):
         Partial dependence plot (?)
         Todo: Generic Partial Dependence plot and compare
         """
+
+        N_COLS = 5
         gridGAM = gamutils.generate_X_grid(self._getBaseClassifier())
         # plt.rcParams['figure.figsize'] = (28, 8)
-        fig, axs = plt.subplots(1, len(self._getFeatureNames()))
+        nAxRow, nAxCol = len(self._getFeatureNames()) // N_COLS + 1, N_COLS
+        fig, axs = plt.subplots(nrows=nAxRow, ncols=nAxCol, figsize=(14, 3 * nAxRow))
         titles = self._getFeatureNames()
-        for i, ax in enumerate(axs):
+        for i in range(len(self._getFeatureNames())):
             pdep, confi = self._getBaseClassifier().partial_dependence(gridGAM, feature=i, width=.9)
-            ax.plot(gridGAM[:, i], pdep)
-            ax.plot(gridGAM[:, i], confi[0][:, 0], c='grey', ls='--')
-            ax.plot(gridGAM[:, i], confi[0][:, 1], c='grey', ls='--')
-            ax.set_title(titles[i])
-        fig.set_tight_layout(True)
+            axIdx = np.unravel_index(i, (nAxRow, nAxCol))
+            axs[axIdx[0], axIdx[1]].plot(gridGAM[:, i], pdep)
+            axs[axIdx[0], axIdx[1]].plot(gridGAM[:, i], confi[0][:, 0], c='grey', ls='--')
+            axs[axIdx[0], axIdx[1]].plot(gridGAM[:, i], confi[0][:, 1], c='grey', ls='--')
+            axs[axIdx[0], axIdx[1]].set_title(titles[i])
+        # fig.set_tight_layout(True)
         fig.show()
 
     def printPlotSummary(self, cv: Union[None, int] = 5):
@@ -625,7 +637,7 @@ class LogisticLinearLocal(ModelAbs):
     Todo: Genuine Local Logistic with weights and add statistics
     """
 
-    name = 'Logistic Local (Linear Proxy)'
+    name = 'Linear Local'
 
     def __init__(self, scale=True, reg_type: str = 'll', bw: Union[str, float, Sequence] = 1.):
         ModelAbs.__init__(self, scale=scale)
@@ -779,13 +791,20 @@ class Tree(ModelAbs):
         dotData = sktree.export_graphviz(self._getBaseClassifier(), precision=2, proportion=True,
                                          feature_names=self._getFeatureNames(), class_names=['Dead', 'Alive'],
                                          impurity=True, filled=True, out_file=None)
+        dotData = (dotData[:15] +
+                   'graph [ dpi = 400 ]; \n' +
+                   'graph[fontname = "helvetica"]; \n' +
+                   'node[fontname = "helvetica"]; \n' +
+                   'edge[fontname = "helvetica"]; \n' +
+                   dotData[15:])
         imgPath = os.path.join('data', 'temp', 'tree.png')
         pydotplus.graph_from_dot_data(dotData).write_png(imgPath)
         image = img.imread(imgPath)
-        fig, ax = plt.subplots()
-        ax.imshow(image)
-        ax.set_title('Graph: {}'.format(self.name))
+        fig, ax = plt.subplots(figsize=(14, 14))
         fig.set_tight_layout(True)
+        ax.imshow(image)
+        ax.set_title('Graph: {}'.format(self.name), fontsize=14)
+        ax.axis('off')
         fig.show()
 
     def printPlotSummary(self, cv: Union[None, int] = 5):
@@ -796,6 +815,7 @@ class Tree(ModelAbs):
 class RandomForest(ModelAbs):
     """
     Random Forest classifier (Decision Trees + Bagging)
+    Todo: Add OOB training progress plot
     """
 
     name = 'Random Forest'
@@ -826,7 +846,7 @@ class RandomForest(ModelAbs):
     def printCoefficientsInfo(self):
         print('-----Feature Importance-----')
         importance = self._getBaseClassifier().feature_importances_
-        importanceSrs = pd.Series(importance, index=self._getFeatureNames())
+        importanceSrs = pd.Series(importance, index=self._getFeatureNames()).sort_values(ascending=False)
         print(importanceSrs)
         print('')
 
@@ -890,7 +910,7 @@ class BoostedTree(ModelAbs):
     def printCoefficientsInfo(self):
         print('-----Feature Importance-----')
         importance = self._getBaseClassifier().feature_importances_
-        importanceSrs = pd.Series(importance, index=self._getFeatureNames())
+        importanceSrs = pd.Series(importance, index=self._getFeatureNames()).sort_values(ascending=False)
         print(importanceSrs)
         print('')
 
@@ -901,10 +921,13 @@ class BoostedTree(ModelAbs):
         fig, axs = skens.partial_dependence.plot_partial_dependence(self._getBaseClassifier(), X=xScaled,
                                                                     features=features,
                                                                     feature_names=self._getFeatureNames(),
-                                                                    percentiles=(0.05, 0.95), grid_resolution=100)
+                                                                    percentiles=(0.05, 0.95), grid_resolution=100,
+                                                                    n_cols=5)
         # fig.suptitle('Partial Dependence: {}'.format(self.name))
         # fig.subplots_adjust(top=0.9)
-        fig.set_tight_layout(True)
+        fig.set_size_inches(14, 3 * (len(self._getFeatureNames()) // 5))
+        fig.tight_layout(rect=[0, 0, 1, 0.99])
+        fig.suptitle('Partial dependence: {}'.format(self.name))
         fig.show()
 
     def printPlotSummary(self, cv: Union[None, int] = 5):
@@ -1000,7 +1023,7 @@ class Vote(ModelAbs):
 
     name = 'Vote'
 
-    def __init__(self, scale: bool, Models: Sequence[Tuple[str, ModelAbs]], voting='hard', weights=None,
+    def __init__(self, scale: str, Models: Sequence[Tuple[str, ModelAbs]], voting='hard', weights=None,
                  baseClassifiersInfo=True):
         """
         If scale is True, you can use scale = False for the underlying models. Otherwise, the data will be scaled
@@ -1070,7 +1093,7 @@ class VoteCV(Vote):
     name = 'Vote CV'
 
     def __init__(self, weightsCv: int, weightsGrid: Sequence[Sequence[float]],
-                 scale: bool, Models: Sequence[Tuple[str, ModelAbs]], voting='hard',
+                 scale: str, Models: Sequence[Tuple[str, ModelAbs]], voting='hard',
                  baseClassifiersInfo=True):
         """If scale is True, you can use scale = False for the underlying models. Otherwise, the data will be scaled
         twice."""
@@ -1110,32 +1133,45 @@ class VoteRegress(Vote):
 
     name = 'Vote Regress'
 
-    def __init__(self, cv: int,
-                 scale: bool, Models: Sequence[Tuple[str, ModelAbs]], voting='hard',
+    def __init__(self, weightsCv: int,
+                 scale: str, Models: Sequence[Tuple[str, ModelAbs]], voting='hard',
                  loss='square', baseClassifiersInfo=True):
         """If scale is True, you can use scale = False for the underlying models. Otherwise, the data will be scaled
         twice."""
 
         Vote.__init__(self, scale=scale, Models=Models, voting=voting, weights=None,
                       baseClassifiersInfo=baseClassifiersInfo)
-        self.cv = cv
+        self.weightsCv = weightsCv
         self.loss = loss
 
     def _makeBaseClassifier(self) -> skmdl._VoteRegress:
         return skmdl._VoteRegress(estimators=[[x, y._makeModel()] for x, y in self.Models], voting=self.voting,
-                                  cv=self.cv, loss=self.loss)
+                                  cv=self.weightsCv, loss=self.loss)
 
     def _getBaseClassifier(self) -> skmdl._VoteRegress:
         return self.model.named_steps['clf']
 
     def printCoefficientsInfo(self):
+        COEF_THRESHOLD = 0.01
         Vote.printCoefficientsInfo(self)
         w = self._getBaseClassifier().weights
         idx = np.argsort(-w)
         print('-----Weights-----')
         for i in idx:
-            if w[i] > 0: print('{} = {:.2f}'.format(self.Models[i][0], w[i]))
+            if w[i] > COEF_THRESHOLD: print('{} = {:.2f}'.format(self.Models[i][0], w[i]))
         print('')
+
+    def plotPredictCorrelations(self):
+        df = pd.DataFrame(self._getBaseClassifier().predictions_, columns=[x[0] for x in self.Models])
+        fig, ax = plt.subplots(figsize=(8, 7))
+        g = sns.heatmap(df.corr(), annot=True, fmt=".2f", ax=ax)
+        ax.set_title('Correlations')
+        fig.tight_layout()
+
+    def printPlotSummary(self, cv: Union[None, int] = 5):
+        ModelAbs.printPlotSummary(self, cv=cv)
+        self.plotPredictCorrelations()
+
 
 
 if __name__ == '__main__':

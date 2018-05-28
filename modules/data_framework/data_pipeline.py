@@ -33,20 +33,20 @@ def _featuresPipeline(data: pd.DataFrame, sibSpCutoff: Union[None, int] = 1, par
     assert 'C' in dataC.Embarked.values
     assert 'Q' in dataC.Embarked.values
     utdata.imputeFeature(dataC, feature='Embarked', method='mode', verbose=False)
-    dataC = pd.get_dummies(dataC, columns=['Embarked', 'Sex'], prefix_sep='')
+    dataC = pd.get_dummies(dataC, columns=['Embarked', 'Sex'], prefix_sep='', dtype=utdata.CATEGORICAL_TYPE)
     dataC.drop(columns=['EmbarkedQ', 'Sexmale'], inplace=True)
     dataC.rename(columns={'Sexfemale': 'Female'}, inplace=True)
 
     # -- Cabin, Name, Ticket
     if syntheticFeatures:
-        dataC['CabinNan'] = dataC['Cabin'].isna().astype(np.uint8)
-        dataC['AgeNan'] = dataC['Age'].isna().astype(np.uint8)
+        dataC['CabinNan'] = dataC['Cabin'].isna().astype(utdata.CATEGORICAL_TYPE)
+        dataC['AgeNan'] = dataC['Age'].isna().astype(utdata.CATEGORICAL_TYPE)
         titles = dataC.Name.apply(utdata.getTitle)
         titles[(titles == 'Mlle')] = 'Miss'
         titles[(titles == 'Mme')] = 'Mrs'
         titles[(titles != 'Mr') & (titles != 'Miss') & (titles != 'Mrs') & (titles != 'Master')] = 'Rare'
         dataC['Title'] = titles
-        dataC = utdata.dummyFeature(dataC, 'Title', prefix_sep='')
+        dataC = pd.get_dummies(dataC, columns=['Title'], prefix_sep='', dtype=utdata.CATEGORICAL_TYPE)
         dataC.drop(columns=['TitleMr', 'TitleMrs'], inplace=True)
     dataC.drop(columns=['Cabin', 'Ticket', 'Name'], inplace=True)
 
@@ -63,12 +63,12 @@ def _featuresPipeline(data: pd.DataFrame, sibSpCutoff: Union[None, int] = 1, par
     if sibSpCutoff is not None: dataC.loc[dataC['SibSp'] > sibSpCutoff, 'SibSp'] = sibSpCutoff
     if parchCutoff is not None: dataC.loc[dataC['Parch'] > parchCutoff, 'Parch'] = parchCutoff
 
-    dataC.Survived = dataC.Survived.astype(np.uint8)
+    # dataC.Survived = dataC.Survived.astype(CATEGORICAL_TYPE)
 
     return dataC
 
 
-def featuresPipeline(data: pd.DataFrame, version: int = 1):
+def featuresPipeline(data: pd.DataFrame, version: int = 1, verbose: bool=True):
     """
     Data cleaning of features, the full pipeline
 
@@ -77,7 +77,8 @@ def featuresPipeline(data: pd.DataFrame, version: int = 1):
         version: Version of the feature processing pipeline (1, 2, 3, 4, 5); version=5 is recommended
     """
 
-    print('-- Data pipeline v. {} --'.format(version), end='\n\n')
+    if verbose:
+        print('-- Data pipeline v. {} --'.format(version), end='\n\n')
     if version == 1:
         return _featuresPipeline(data=data, sibSpCutoff=1, parchCutoff=1, ageImputeMethod='mean',
                                  syntheticFeatures=False)
@@ -117,14 +118,13 @@ def _splitTrainTest(data: pd.DataFrame, outcome: str = 'Survived'):
 
 
 def featuresPipelineTrainTest(dataTrain: pd.DataFrame, dataTest: pd.DataFrame,
-                              version: int = 1) -> Tuple[pd.DataFrame, pd.DataFrame]:
+                              version: int = 1, verbose: bool=True) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Combined data pipeline for train and test data, and indices of non-binary features"""
 
     data = _combineTrainTest(dataTrain=dataTrain, dataTest=dataTest, outcome='Survived')
-    dataC = featuresPipeline(data=data, version=version)
+    dataC = featuresPipeline(data=data, version=version, verbose=verbose)
     dataTrainC, dataTestC = _splitTrainTest(data=dataC, outcome='Survived')
-    # nonbinaryIds = utdata.scaleFeatureIndices(data=dataTrainC, exclude=['Survived'])
-    return dataTrainC, dataTestC#, nonbinaryIds
+    return dataTrainC, dataTestC
 
 
 if __name__ == 'main':

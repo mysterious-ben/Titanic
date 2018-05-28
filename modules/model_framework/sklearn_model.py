@@ -96,7 +96,7 @@ class _LogisticLinearLocal(skbase.BaseEstimator, skbase.ClassifierMixin):
         X, y = self._check_X_y_fit(X, y)
         self.classes_ = np.unique(y)
         self.nfeatures_ = X.shape[1]
-        bw = np.full(self.nfeatures_, self.bw) if isinstance(self.bw, numbers.Number) else self.bw
+        bw = np.full(self.nfeatures_, self.bw) if isinstance(self.bw, float) else self.bw
 
         self.model_ = smkernel.KernelReg(endog=y * 2 - 1, exog=X, var_type='c' * self.nfeatures_,
                                          reg_type=self.reg_type, bw=bw,
@@ -118,7 +118,7 @@ class _LogisticLinearLocal(skbase.BaseEstimator, skbase.ClassifierMixin):
     def predict_proba(self, X) -> np.ndarray:
         skutilvalid.check_is_fitted(self, ['model_'])
         dsn_pred = self.decision_function(X)
-        dsn_pred = 1 / (1 + np.exp(-dsn_pred))
+        dsn_pred = 1. / (1. + np.exp(-dsn_pred))
         return utmdl.proba2d(proba1d=dsn_pred)
 
     def _check_X_y_fit(self, X, y):
@@ -244,14 +244,15 @@ class _VoteRegress(skens.VotingClassifier):
             method = 'predict'
         else:
             raise LookupError
-        predictions = np.empty((X.shape[0], len(self.estimators)), dtype=np.float)
+        self.predictions_ = np.empty((X.shape[0], len(self.estimators)), dtype=np.float)
         for i, est in enumerate(self.estimators):
             pred = skms.cross_val_predict(estimator=est[1], X=X, y=y, cv=self.cv, n_jobs=self.n_jobs,
                                           fit_params=fit_params, method=method)
-            predictions[:, i] = pred[:, 1]
+            if method == 'predict_proba': pred = pred[:, 1]
+            self.predictions_[:, i] = pred
 
         # --fit weights using predictions
-        X_, y_ = predictions - 0.5, y - 0.5
+        X_, y_ = self.predictions_ - 0.5, y - 0.5
         nFeatures = X_.shape[1]
         if self.loss == 'square':
             self.weights, _ = optimize.nnls(A=X_, b=y_)
