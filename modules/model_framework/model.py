@@ -56,10 +56,18 @@ class Metrics(ABC):
     @staticmethod
     def generator(method: str = 'accuracy') -> Tuple[Callable[[Sequence[float], Sequence[float]], float], bool]:
         """
-        Generate a score function from its name
+        Generate a score function; Sklearn-compatible
 
         Args:
-            method: score method name
+            method (str): name of the score method
+                'accuracy' - Accuracy score
+                'accproba' - Accuracy computed using predicted probabilities instead of outcomes
+                'logproba' - Minus log-likelihood
+                'aucproba' - AUC
+                'precision' - Precision score
+                'recall' - Recall score
+
+        Returns: score function
         """
         if method == 'accuracy':
             return Metrics.accuracy
@@ -79,18 +87,31 @@ class Metrics(ABC):
 
 class ModelAbs(ABC):
     """
-    Abstract classification model
+    Abstract classification model class, with a common interface for model fitting, prediction and performance estimation
 
     Attributes:
-        model:
-        x:
-        xt:
-        y:
-        yt:
-        yH:
-        ytH:
-        yP:
-        ytP:
+        scale (str): defines how _makeScaler treats the features
+            'none' - features are not scaled
+            'some' - non-categorical features are scaled
+            'none' - all features are scaled
+        model (Pipeline): the base classifier
+            Assumed to be an Sklearn pipeline; created in in self.fit
+        x (DataFrame): feature values from the training set
+            Passed to self.fit
+        xt (DataFrame): feature values from the test set
+            passed to self.predict
+        y (ndarray): outcome values from the training set
+            Binary, 0 or 1; passed to self.fit
+        yt (ndarray): outcome values from the test set
+            May be unavailable; passed to self.predict
+        yH (ndarray): predicted outcomes for the training set
+            Computed in self.predict
+        ytH (ndarray): predicted outcomes for the test set
+            Computed in self.predict
+        yP (ndarray): predicted outcome probabilities for the training set
+            Computed in self.predict
+        ytP (ndarray): predicted outcome probabilities for the test set
+            Computed in self.predict
     """
 
     name = 'Abstract Classifier'
@@ -194,13 +215,11 @@ class ModelAbs(ABC):
 
     def fitPredict(self, dataTrain: pd.DataFrame, dataTest: pd.DataFrame) -> None:
         """Fit, then predict"""
-
         self.fit(data=dataTrain)
         self.predict(data=dataTest)
 
     def fitPredictSubmission(self, dataTrain: pd.DataFrame, dataTest: pd.DataFrame) -> pd.DataFrame:
         """Fit, then predict, then create a submission"""
-
         self.fit(data=dataTrain)
         self.predict(data=dataTest)
         # print('Predicted survival rate in the submission = {:.2f}'.format(np.sum(self.ytH) / len(self.ytH)))
@@ -235,6 +254,7 @@ class ModelAbs(ABC):
 
     def scoreCV(self, methods: Sequence[str] = ('accuracy',), cv: int = 5, random_state: Union[None, int] = None) \
             -> Dict[str, Sequence[float]]:
+        """Score the classifier (cross-validation)"""
         scoring = {}
         for method in methods:
             metrics, proba = Metrics.generator(method=method)
@@ -335,7 +355,6 @@ class ModelAbs(ABC):
     @staticmethod
     def staticPlotROC(y: pd.DataFrame, yP: pd.DataFrame, ax=None, label: str = ' ', title: str = 'ROC') -> None:
         """Plot the ROC curve (static)"""
-
         def plotAux():
             fpr, tpr, _ = skmtcs.roc_curve(y, yP)
             ax.plot(fpr, tpr, label=label)
@@ -378,7 +397,7 @@ class ModelAbs(ABC):
 
 def genModelCV(ModelClass: Type[ModelAbs], cv: int, grid: Dict[str, Sequence]):
     """
-    Generate a classifier with some of the parameters selected by CV
+    Generate a classifier whose parameters are selected by GridSearchCV
     Todo: Imply doctring for ModelCV from ModelClass OR accept model instance instead of class
 
     Args:
