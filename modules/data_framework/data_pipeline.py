@@ -118,12 +118,15 @@ def _splitTrainTest(data: pd.DataFrame, outcome: str = 'Survived'):
 
 
 def featuresPipelineTrainTest(dataTrain: pd.DataFrame, dataTest: pd.DataFrame,
-                              version: int = 1, verbose: bool=True) -> Tuple[pd.DataFrame, pd.DataFrame]:
+                              version: int = 1, verbose: bool=False) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Combined data pipeline for train and test data, and indices of non-binary features"""
 
+    # noTestLabels = (not 'Survived' in dataTest.columns)
+    # if noTestLabels: dataTest.insert(loc=0, column='Survived', value=0)
     data = _combineTrainTest(dataTrain=dataTrain, dataTest=dataTest, outcome='Survived')
     dataC = featuresPipeline(data=data, version=version, verbose=verbose)
     dataTrainC, dataTestC = _splitTrainTest(data=dataC, outcome='Survived')
+    # if noTestLabels: dataTest.Survived = np.nan
     return dataTrainC, dataTestC
 
 

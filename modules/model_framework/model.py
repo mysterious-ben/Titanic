@@ -27,7 +27,7 @@ from sklearn import metrics as skmtcs
 from sklearn import model_selection as skms
 from sklearn import neighbors as sknbr
 from sklearn import pipeline as skpipe
-from sklearn import preprocessing as skprcss
+# from sklearn import preprocessing as skprcss
 from sklearn import tree as sktree
 from sklearn import svm as sksvm
 import pymc3 as pm
@@ -203,10 +203,11 @@ class ModelAbs(ABC):
 
         self.fit(data=dataTrain)
         self.predict(data=dataTest)
+        # print('Predicted survival rate in the submission = {:.2f}'.format(np.sum(self.ytH) / len(self.ytH)))
         return self.submission()
 
     def _ytValid(self) -> bool:
-        return (self.yt is not None) and (np.sum(np.isnan(self.yt)) == 0)
+        return (self.yt is not None) and (np.sum(np.isnan(self.yt)) == 0) and (0 in self.yt) and (1 in self.yt)
 
     def scoreIS(self, methods: Sequence[str] = ('accuracy',)) -> Dict[str, float]:
         """Score the classifier (in-sample)"""
@@ -264,10 +265,13 @@ class ModelAbs(ABC):
         sampleSize = len(self.y)
         sampleSizeT = len(self.yt) if (self.yt is not None) else None
         posRate = np.sum(self.y) / len(self.y)
-        posRateT = np.sum(self.yt) / len(self.yt) if (self.yt is not None) else None
+        posRatePred = np.sum(self.yH) / len(self.yH)
+        posRateT = np.sum(self.yt) / len(self.yt) if (self._ytValid()) else 0
+        posRatePredT = np.sum(self.ytH) / len(self.ytH)
         print('-----Train and Test Sets-----')
         print('Sample Size (Train / Test): {:d} / {:d}'.format(sampleSize, sampleSizeT))
-        print('Survived Rate (Train / Test): {:.2f} / {:.2f}'.format(posRate, posRateT))
+        print('Train Survived Rate (True / Predicted): {:.2f} / {:.2f}'.format(posRate, posRatePred))
+        print('Test Survived Rate (True / Predicted): {:.2f} / {:.2f}'.format(posRateT, posRatePredT))
         print('')
 
     def printConfusion(self) -> None:
@@ -845,8 +849,10 @@ class RandomForest(ModelAbs):
 
     def printCoefficientsInfo(self):
         print('-----Feature Importance-----')
+        COEF_THRESHOLD = 0.01
         importance = self._getBaseClassifier().feature_importances_
         importanceSrs = pd.Series(importance, index=self._getFeatureNames()).sort_values(ascending=False)
+        importanceSrs = importanceSrs.loc[importanceSrs > COEF_THRESHOLD]
         print(importanceSrs)
         print('')
 
@@ -862,7 +868,7 @@ class BoostedTree(ModelAbs):
                  subsample: float = 1., max_features: Union[int, None] = None,
                  max_depth: Union[int, None] = 2, max_leaf_nodes: Union[int, None] = None,
                  min_samples_leaf=5,
-                 random_state: Union[None, int] = None, balanceWeights: bool = False):
+                 random_state: Union[None, int] = None, class_weight: Union[None, str] = None):
         ModelAbs.__init__(self, scale=scale)
         self.n_estimators = n_estimators
         self.loss = loss
@@ -873,7 +879,7 @@ class BoostedTree(ModelAbs):
         self.max_depth = max_depth
         self.min_samples_leaf = min_samples_leaf
         self.random_state = random_state
-        self.balanceWeights = balanceWeights
+        self.class_weight = class_weight
 
         # classifier = skens.GradientBoostingClassifier(n_estimators=n_estimators, loss=loss,
         #                                               learning_rate=learning_rate, subsample=subsample,
@@ -888,15 +894,17 @@ class BoostedTree(ModelAbs):
         #     classifier.fit = MethodType(fitBalanced, classifier)
 
     def _makeBaseClassifier(self) -> skens.GradientBoostingClassifier:
-        if not self.balanceWeights:
+        if self.class_weight is None:
             classifierClass = skens.GradientBoostingClassifier
-        else:
+        elif self.class_weight == 'balanced':
             class GradientBoostingClassifierBalanced(skens.GradientBoostingClassifier):
                 def fit(self, X, y, sample_weight=None, monitor=None):
                     weights = ModelAbs.balancedWeights(y)
                     return skens.GradientBoostingClassifier.fit(self, X=X, y=y, sample_weight=weights)
 
             classifierClass = GradientBoostingClassifierBalanced
+        else:
+            raise LookupError
 
         return classifierClass(n_estimators=self.n_estimators, loss=self.loss,
                                learning_rate=self.learning_rate, subsample=self.subsample,
@@ -909,8 +917,10 @@ class BoostedTree(ModelAbs):
 
     def printCoefficientsInfo(self):
         print('-----Feature Importance-----')
+        COEF_THRESHOLD = 0.01
         importance = self._getBaseClassifier().feature_importances_
         importanceSrs = pd.Series(importance, index=self._getFeatureNames()).sort_values(ascending=False)
+        importanceSrs = importanceSrs.loc[importanceSrs > COEF_THRESHOLD]
         print(importanceSrs)
         print('')
 
