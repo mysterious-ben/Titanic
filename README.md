@@ -26,9 +26,8 @@
 - Unit tests: the folder "tests"
 - Training and test data sets: the folder "data"
 
-**Use case with Random Forests**
+**A use case of the classification model class for Random Forests:**
 
-A few lines below will:
 - fit a Random Forests classifier (with the number of leaf nodes chosen by cross-validation)
 - output all available statistics to measure model performance
 - write a Kaggle submission in data/description/submission
